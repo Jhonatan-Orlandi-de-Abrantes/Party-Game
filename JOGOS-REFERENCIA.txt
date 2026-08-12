@@ -1,0 +1,16 @@
+(Jogos de referência x No que eles são usados como referência)
+
+Level Devil: (Trailer: https://www.youtube.com/watch?v=eurQlgo6jtI)
+ - Efeitos sonoros, estilo de efeito de morte dos personagens
+
+PICO PARK: (Trailer: https://www.youtube.com/watch?v=r_-yjKYfp9Y)
+ - Efeitos sonoros, estilo dos personagens, estilo do jogo (in-game)
+
+Gartic Phone:
+ - Timer que aparece ao iniciar o jogo.
+
+Make it Meme:
+ - Forma de pontuação e placar do jogo.
+
+Sitck Fight:
+ - 

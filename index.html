@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bomb Party</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Press+Start+2P&display=swap" rel="stylesheet" />
+  <link rel="icon" type="image/png" href="src\Images\icon\icon.png" />
+  <link rel="stylesheet" href="src/css/style.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="game-header">
+      <h1 class="game-title">
+        <span class="title-word">
+          <span class="title-bomb"><img src="src/Images/BombGame/bomb.png" alt="" aria-hidden="true" /></span>
+          Bomb
+        </span><span class="title-word">Party</span>
+      </h1>
+      <div class="game-mode" id="gameMode">Bomb Clássico</div>
+    </header>
+
+    <section id="screen-welcome" class="card screen hidden">
+      <div class="row">
+        <div class="col">
+          <label for="nicknameInput">Apelido</label>
+          <input id="nicknameInput" placeholder="Digite um apelido" maxlength="16" autocomplete="off" />
+        </div>
+        <div class="col">
+          <label for="roomCodeInput">Código da sala</label>
+          <input id="roomCodeInput" placeholder="Ex: AZ12" maxlength="6" autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col">
+          <label for="maxPlayersInput">Máximo de jogadores</label>
+          <select id="maxPlayersInput">
+            <option value="2">2 jogadores</option>
+            <option value="3">3 jogadores</option>
+            <option value="4">4 jogadores</option>
+          </select>
+        </div>
+        <div class="col">
+          <label for="gameModeSelect">Modo da partida</label>
+          <select id="gameModeSelect">
+            <option value="online">Online (uma tela para cada player)</option>
+            <option value="local">Multijogador local (uma tela só)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row">
+        <button id="createRoomBtn">Criar sala</button>
+        <button id="joinRoomBtn" class="secondary">Entrar na sala</button>
+      </div>
+
+      <div class="notice" id="welcomeNotice"></div>
+      <div class="footer-note">Crie ou entre em uma sala para começar. Ao criar, compartilhe o código com amigos.</div>
+    </section>
+
+    <section id="screen-lobby" class="card screen hidden">
+      <div class="lobby-topbar">
+        <div>
+          <strong>Código da sala</strong>
+          <div id="roomCodeDisplay" class="room-code-display">----</div>
+        </div>
+        <div>
+          <strong>Status da sala</strong>
+          <div id="roomStatusDisplay" class="room-status-display">Aguardando jogadores...</div>
+          <div class="status-line" id="roomModeDisplay">Online</div>
+        </div>
+        <button id="settingsGearBtn" class="gear-btn" title="Configurações">⚙</button>
+      </div>
+
+      <div class="row">
+        <div class="col">
+          <strong>Jogadores na sala</strong>
+          <ul id="playerList" class="player-list"></ul>
+        </div>
+        <div class="col">
+          <strong>Controle do jogo</strong>
+          <div class="status-line">Máximo de jogadores: <span id="maxPlayersDisplay"></span></div>
+          <div class="status-line">Você é: <span id="yourRoleDisplay"></span></div>
+          <div class="status-line" id="hostHint">Apenas o host pode iniciar.</div>
+          <div class="status-line" id="gamepadStatus">Nenhum controle conectado.</div>
+          <div class="row" style="margin-top:14px; gap:12px;">
+            <button id="startGameBtn">Iniciar partida</button>
+            <button id="leaveRoomBtn" class="secondary">Sair</button>
+          </div>
+          <div class="notice" id="lobbyNotice"></div>
+          <div id="lobbyAlerts" class="lobby-alerts"></div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <strong>Como jogar:</strong>
+        <p>Anda, pula e encosta em outro jogador para passar a bomba. Após 15 segundos com a bomba, ela explode em quem a segura. Use o dash a cada 20 segundos para escapar. Cada jogador pode escolher seu controle (ou teclado) na lista de jogadores acima.</p>
+      </div>
+
+      <div id="settingsPanel" class="settings-panel">
+        <div class="settings-head">
+          <h3>Configurações</h3>
+          <button id="settingsCloseBtn" class="secondary" title="Fechar">✕</button>
+        </div>
+        <div class="settings-scroll">
+          <div class="setting-group">
+            <strong class="setting-title">Aparência</strong>
+            <div class="setting-line">
+              <label for="playerColorInput">Cor do personagem</label>
+              <div class="color-picker-wrap">
+                <input type="color" id="playerColorInput" value="#ff6b6b" />
+                <span id="colorHexDisplay">#FF6B6B</span>
+              </div>
+            </div>
+            <div class="setting-line">
+              <label for="hatBtn">Chapéu</label>
+              <button id="hatBtn" class="secondary">Escolher chapéu</button>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <strong class="setting-title">Jogabilidade</strong>
+            <div class="setting-line">
+              <label class="check-line">
+                <input type="checkbox" id="autoPassCheckbox" />
+                <span>Passar bomba automaticamente</span>
+              </label>
+            </div>
+            <div class="setting-line">
+              <label>Atalhos</label>
+              <div class="keys-grid">
+                <button type="button" class="key-btn" data-action="left">Esquerda: <span>A</span></button>
+                <button type="button" class="key-btn" data-action="right">Direita: <span>D</span></button>
+                <button type="button" class="key-btn" data-action="jump">Pular: <span>W</span></button>
+                <button type="button" class="key-btn" data-action="pass">Passar: <span>Q</span></button>
+                <button type="button" class="key-btn" data-action="dash">Dash: <span>Shift</span></button>
+              </div>
+              <button id="resetKeysBtn" class="secondary" style="margin-top:10px;">Resetar atalhos</button>
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <strong class="setting-title">Desempenho</strong>
+            <div class="setting-line">
+              <label class="check-line">
+                <input type="checkbox" id="fpsToggle" />
+                <span>Mostrar FPS e Ping</span>
+              </label>
+            </div>
+            <div class="setting-line">
+              <label for="fpsColorInput">Cor dos mostradores</label>
+              <div class="color-picker-wrap">
+                <input type="color" id="fpsColorInput" value="#ffe066" />
+                <span id="fpsColorHexDisplay">#FFE066</span>
+              </div>
+            </div>
+            <div class="setting-line">
+              <label for="fpsLimitInput">Limite de FPS: <span id="fpsLimitValue">Sem limite</span></label>
+              <input type="range" id="fpsLimitInput" min="0" max="240" step="5" value="0" />
+            </div>
+            <div class="setting-line">
+              <label for="resolutionInput">Resolução: <span id="resolutionValue">100%</span></label>
+              <input type="range" id="resolutionInput" min="5" max="100" step="5" value="100" />
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <strong class="setting-title">Áudio</strong>
+            <div class="setting-line">
+              <label for="musicVolumeInput">Volume da música: <span id="musicVolumeValue">70</span></label>
+              <input type="range" id="musicVolumeInput" min="0" max="100" step="1" value="70" />
+            </div>
+            <div class="setting-line">
+              <label for="sfxVolumeInput">Volume dos efeitos: <span id="sfxVolumeValue">90</span></label>
+              <input type="range" id="sfxVolumeInput" min="0" max="100" step="1" value="90" />
+            </div>
+          </div>
+
+          <div class="setting-group">
+            <strong class="setting-title">Sala</strong>
+            <div class="setting-line">
+              <button id="settingsQuitBtn" class="danger">Sair da sala</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-game" class="card screen hidden">
+      <div id="game-area">
+        <canvas id="gameCanvas" width="1080" height="540"></canvas>
+        <div id="toastBox" class="toast-box hidden"></div>
+        <div id="messageBox" class="message-box hidden">
+          <h2 id="messageTitle" class="message-title">Bomb Party</h2>
+          <p id="messageText"></p>
+          <div class="link-row">
+            <button id="returnLobbyBtn">Voltar para lobby</button>
+          </div>
+        </div>
+      </div>
+      <div class="hud-row">
+        <div class="hud-panel">
+          <strong>Controles</strong>
+          <div class="status-line" id="controlsInfo">Mover: A/D, Pular: W, Passar: Q, Dash: Shift</div>
+          <div class="status-line" id="gamepadInfo">Gamepad: Mover: Analógico, Pular: A, Passar: X, Dash: RT</div>
+        </div>
+      </div>
+      <button id="gameQuitBtn" class="game-quit-btn" title="Sair do jogo">✕</button>
+    </section>
+  </div>
+
+  <div id="hatPopup" class="hat-popup hidden">
+    <div class="hat-popup-box">
+      <h3>Escolha seu chapéu</h3>
+      <div id="hatGrid" class="hat-grid"></div>
+      <div class="link-row">
+        <button id="hatCloseBtn" class="secondary">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="countdownOverlay" class="countdown-overlay hidden">
+    <div id="countdownNumber" class="countdown-number">5</div>
+    <div class="countdown-label">Prepare-se!</div>
+  </div>
+
+  <div id="confirmModal" class="modal hidden">
+    <div class="modal-box">
+      <h3>Confirmação</h3>
+      <p id="confirmText"></p>
+      <div class="link-row">
+        <button id="confirmOkBtn">Confirmar</button>
+        <button id="confirmCancelBtn" class="secondary">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="src/js/main.js"></script>
+</body>
+</html>

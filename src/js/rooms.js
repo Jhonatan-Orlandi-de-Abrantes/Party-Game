@@ -1,0 +1,186 @@
+import { state } from './state.js';
+import { ROOM_CODE_LENGTH, STALE_TIMEOUT } from './constants.js';
+import { loadRooms, saveRooms, removePlayerInput, gameKey, getDeviceId, getHat } from './storage.js';
+
+export function randomCode() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let code = '';
+  for (let i = 0; i < ROOM_CODE_LENGTH; i++) {
+    code += chars[Math.floor(Math.random() * chars.length)];
+  }
+  if (state.rooms.some(room => room.code === code)) return randomCode();
+  return code;
+}
+
+export function randomColor() {
+  const r = Math.floor(Math.random() * 256);
+  const g = Math.floor(Math.random() * 256);
+  const b = Math.floor(Math.random() * 256);
+  return `#${[r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
+export function createRoom(nickname, maxPlayers, mode = 'online') {
+  if (!nickname) return 'Informe um apelido antes de criar a sala.';
+  state.rooms = loadRooms();
+  const code = randomCode();
+  const playerId = crypto.randomUUID();
+  const deviceId = getDeviceId();
+  const player = { id: playerId, nickname, color: randomColor(), host: true, joinedAt: Date.now(), lastSeen: Date.now(), deviceId, hat: getHat(deviceId) };
+  const room = { code, players: [player], maxPlayers, started: false, ownerId: playerId, createdAt: Date.now(), mode };
+  state.rooms.push(room);
+  saveRooms();
+  state.myPlayerId = playerId;
+  state.myRoomCode = room.code;
+  state.currentRoom = room;
+  sessionStorage.setItem('bombPartyRoom', room.code);
+  sessionStorage.setItem('bombPartyPlayerId', playerId);
+  return null;
+}
+
+export function joinRoom(nickname, code) {
+  if (!nickname || !code) return 'Informe apelido e código da sala.';
+  state.rooms = loadRooms();
+  const room = state.rooms.find(room => room.code === code);
+  if (!room) return 'Sala não encontrada. Verifique o código.';
+  if (room.started) return 'Partida já começou. Aguarde a próxima sala.';
+  if (room.players.length >= room.maxPlayers) return 'Sala cheia. Escolha outra ou aguarde vaga.';
+  if (room.players.some(player => player.nickname.toLowerCase() === nickname.toLowerCase())) {
+    return 'Apelido já utilizado na sala. Use outro.';
+  }
+  const playerId = crypto.randomUUID();
+  const deviceId = getDeviceId();
+  const player = { id: playerId, nickname, color: randomColor(), host: false, joinedAt: Date.now(), lastSeen: Date.now(), deviceId, hat: getHat(deviceId) };
+  room.players.push(player);
+  saveRooms();
+  state.myPlayerId = playerId;
+  state.myRoomCode = room.code;
+  state.currentRoom = room;
+  sessionStorage.setItem('bombPartyRoom', room.code);
+  sessionStorage.setItem('bombPartyPlayerId', playerId);
+  return null;
+}
+
+export function leaveRoom() {
+  removePlayerFromRoom(state.myRoomCode, state.myPlayerId, false);
+  if (state.myPlayerId) removePlayerInput(state.myPlayerId);
+  state.myRoomCode = null;
+  state.myPlayerId = null;
+  state.currentRoom = null;
+  sessionStorage.removeItem('bombPartyRoom');
+  sessionStorage.removeItem('bombPartyPlayerId');
+}
+
+export function removePlayerFromRoom(roomCode, playerId, silent) {
+  state.rooms = loadRooms();
+  const room = state.rooms.find(room => room.code === roomCode);
+  if (!room) return;
+  const index = room.players.findIndex(player => player.id === playerId);
+  if (index >= 0) room.players.splice(index, 1);
+  if (room.players.length === 0) {
+    state.rooms = state.rooms.filter(room => room.code !== roomCode);
+  } else if (room.ownerId === playerId) {
+    const nextHost = room.players[0];
+    nextHost.host = true;
+    room.ownerId = nextHost.id;
+  }
+  saveRooms();
+  if (!silent && state.currentRoom && state.currentRoom.code === roomCode) {
+    state.currentRoom = state.rooms.find(room => room.code === roomCode) || null;
+  }
+}
+
+export function setStarted(flag) {
+  if (!state.currentRoom) return;
+  state.rooms = loadRooms();
+  const room = state.rooms.find(room => room.code === state.currentRoom.code);
+  if (!room) return;
+  room.started = flag;
+  state.currentRoom = room;
+  saveRooms();
+}
+
+export function startGame(userRequested = true) {
+  if (!state.currentRoom) return 'Nenhuma sala ativa.';
+  state.rooms = loadRooms();
+  const room = state.rooms.find(room => room.code === state.currentRoom.code);
+  if (!room) return 'Sala não encontrada.';
+  state.currentRoom = room;
+  if (userRequested && !room.players.some(player => player.host && player.id === state.myPlayerId)) {
+    return 'Apenas o host pode iniciar o jogo.';
+  }
+  if (userRequested && room.players.length < 2) {
+    return 'É necessário ao menos 2 jogadores para iniciar.';
+  }
+  room.started = true;
+  saveRooms();
+  return null;
+}
+
+export function heartbeat() {
+  if (!state.myRoomCode || !state.myPlayerId) return;
+  state.rooms = loadRooms();
+  const room = state.rooms.find(room => room.code === state.myRoomCode);
+  if (room) state.currentRoom = room;
+  const player = room && room.players.find(p => p.id === state.myPlayerId);
+  if (!room || !player) return;
+  const now = Date.now();
+  if (player.lastSeen && now - player.lastSeen < 2000) return;
+  player.lastSeen = now;
+  saveRooms();
+}
+
+export function cleanupStalePlayers() {
+  state.rooms = loadRooms();
+  const now = Date.now();
+  let changed = false;
+  let droppedCurrent = false;
+  const removedPlayers = [];
+  state.rooms = state.rooms.filter(room => {
+    const code = room.code;
+    const isCurrent = state.currentRoom && state.currentRoom.code === code;
+    const before = room.players.length;
+    room.players = room.players.filter(player => {
+      const keep = now - (player.lastSeen || 0) < STALE_TIMEOUT;
+      if (!keep) {
+        removePlayerInput(player.id);
+        if (isCurrent) removedPlayers.push(player);
+      }
+      return keep;
+    });
+    if (room.players.length !== before) changed = true;
+    if (room.players.length === 0) {
+      localStorage.removeItem(gameKey(code));
+      changed = true;
+      return false;
+    }
+    if (room.ownerId && !room.players.some(player => player.id === room.ownerId)) {
+      const nextHost = room.players[0];
+      nextHost.host = true;
+      room.ownerId = nextHost.id;
+      changed = true;
+    }
+    return true;
+  });
+  const freshCurrent = state.rooms.find(room => room.code === (state.currentRoom && state.currentRoom.code));
+  if (freshCurrent) state.currentRoom = freshCurrent;
+  if (changed) {
+    saveRooms();
+    if (state.currentRoom && !state.rooms.some(room => room.code === state.currentRoom.code)) {
+      state.myRoomCode = null;
+      state.myPlayerId = null;
+      state.currentRoom = null;
+      sessionStorage.removeItem('bombPartyRoom');
+      sessionStorage.removeItem('bombPartyPlayerId');
+      droppedCurrent = true;
+    }
+  }
+  return { dropped: droppedCurrent, removedPlayers };
+}
+
+export function roomSignature(room) {
+  if (!room) return null;
+  const playersSig = room.players.map(player =>
+    `${player.id}|${player.nickname}|${player.host}|${player.color}|${player.hat || 'none'}`
+  ).join(',');
+  return `${room.code}|${room.started}|${room.maxPlayers}|${room.mode || 'online'}|${playersSig}`;
+}

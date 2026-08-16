@@ -15,8 +15,8 @@ import {
   renderLobby,
   updateHud,
   showResultMessage,
-  showToast,
   showLobbyAlert,
+  showGameAlert,
   updateGamepadStatus,
   formatControls,
   formatGamepadControls,
@@ -29,14 +29,26 @@ import {
   playerListItem,
   moveUiFocus,
   activateUiFocus,
-  uiBack
+  uiBack,
+  showPadConnect,
+  getPadConnectIndex,
+  getSettingsPlayer
 } from './ui.js';
 
-game.setOnRoundEnd(result => {
+function showRoundResult(result) {
   state.endShown = true;
   showResultMessage(result);
-});
-game.setOnToast(showToast);
+}
+
+function playDeathSoundIfNew(st) {
+  if (state.deathSoundPlayed) return;
+  if (st && st.roundOverTimer != null && st.roundOverTimer > 0) {
+    state.deathSoundPlayed = true;
+    audio.playSound('kill');
+  }
+}
+
+game.setOnRoundEnd(result => showRoundResult(result));
 
 const SIM_STEP = 1 / 60;
 
@@ -105,13 +117,13 @@ function gameLoop(time) {
   if (!state.gameState || !state.gameState.running) return;
 
   const shared = storage.readGameState();
+  playDeathSoundIfNew(shared);
   if (shared && shared.roundResult) {
     if (!state.endShown) {
-      state.endShown = true;
       state.gameState = shared;
       drawScene();
       updateHud();
-      showResultMessage(shared.roundResult);
+      showRoundResult(shared.roundResult);
     }
     return;
   }
@@ -159,12 +171,14 @@ function clientRenderLoop() {
 
   const st = storage.readGameState();
   const now = Date.now();
+  playDeathSoundIfNew(st);
   if (st && st.roundResult) {
-    state.endShown = true;
-    state.gameState = st;
-    drawScene();
-    updateHud();
-    showResultMessage(st.roundResult);
+    if (!state.endShown) {
+      state.gameState = st;
+      drawScene();
+      updateHud();
+      showRoundResult(st.roundResult);
+    }
     return;
   }
   if (st && st.rev !== state.lastSeenRev) {
@@ -220,6 +234,7 @@ function enterGameScreen() {
   stopGameWait();
   stopCountdown();
   state.endShown = false;
+  state.deathSoundPlayed = false;
   state.lastSeenRev = -1;
   state.accTime = 0;
   state.lastFrameTime = 0;
@@ -232,7 +247,7 @@ function enterGameScreen() {
   applyResolution();
   audio.playGameMusic();
   showScreen('game');
-  input.publishMyInput();
+  input.publishLocalInputs();
   if (document.visibilityState === 'visible') {
     becomeSimulator();
   } else {
@@ -242,11 +257,14 @@ function enterGameScreen() {
 
 function quitToLobby() {
   stopSimLoop();
+  stopGameWait();
+  stopCountdown();
   state.gameState = null;
   state.lastSeenRev = -1;
   state.endShown = false;
   if (state.currentRoom) {
     localStorage.removeItem(storage.gameKey(state.currentRoom.code));
+    rooms.setStarted(false);
   }
   closeSettingsPanel();
   showLobby();
@@ -327,11 +345,19 @@ function cancelCountdownStart() {
   audio.playSound('kill');
 }
 
+refs.countdownCancelBtn.addEventListener('click', () => {
+  if (!isHost()) {
+    showLobbyAlert('Apenas o host pode cancelar o início.', 'leave');
+    return;
+  }
+  cancelCountdownStart();
+  showLobbyAlert('Contagem Interrompida', 'leave');
+});
+
 refs.createRoomBtn.addEventListener('click', () => {
   const nickname = refs.nicknameInput.value.trim();
   const maxPlayers = Number(refs.maxPlayersInput.value);
-  const mode = refs.gameModeSelect.value;
-  const error = rooms.createRoom(nickname, maxPlayers, mode);
+  const error = rooms.createRoom(nickname, maxPlayers);
   if (error) {
     showNotice(refs.welcomeNotice, error);
     return;
@@ -389,7 +415,7 @@ refs.gameQuitBtn.addEventListener('click', () => {
 });
 
 refs.playerColorInput.addEventListener('input', () => {
-  const player = getMyPlayer();
+  const player = getSettingsPlayer();
   if (!state.currentRoom || !player) return;
   player.color = refs.playerColorInput.value;
   storage.saveRooms();
@@ -398,18 +424,21 @@ refs.playerColorInput.addEventListener('input', () => {
 });
 
 refs.autoPassCheckbox.addEventListener('change', () => {
-  if (!state.myPlayerId) return;
-  storage.saveAutoPass(state.myPlayerId, refs.autoPassCheckbox.checked);
+  const player = getSettingsPlayer();
+  if (!player) return;
+  storage.saveAutoPass(player.id, refs.autoPassCheckbox.checked);
 });
 
 refs.fpsToggle.addEventListener('change', () => {
-  if (!state.myPlayerId) return;
-  storage.saveFpsEnabled(state.myPlayerId, refs.fpsToggle.checked);
+  const player = getSettingsPlayer();
+  if (!player) return;
+  storage.saveFpsEnabled(player.id, refs.fpsToggle.checked);
 });
 
 refs.fpsColorInput.addEventListener('input', () => {
-  if (!state.myPlayerId) return;
-  storage.saveFpsColor(state.myPlayerId, refs.fpsColorInput.value);
+  const player = getSettingsPlayer();
+  if (!player) return;
+  storage.saveFpsColor(player.id, refs.fpsColorInput.value);
   refs.fpsColorHexDisplay.textContent = refs.fpsColorInput.value.toUpperCase();
 });
 
@@ -438,20 +467,24 @@ window.addEventListener('storage', event => {
   if (newSignature === previousSignature) return;
 
   let joined = [];
-  if (state.currentRoom && previousPlayers && state.currentScreen === 'lobby') {
+  if (state.currentRoom && previousPlayers && (state.currentScreen === 'lobby' || state.currentScreen === 'game')) {
     const previousIds = new Set(previousPlayers.map(p => p.id));
     const currentIds = new Set(state.currentRoom.players.map(p => p.id));
     joined = state.currentRoom.players.filter(p => !previousIds.has(p.id));
     const left = previousPlayers.filter(p => !currentIds.has(p.id));
-    if (joined.length) audio.playPop();
+    if (joined.length && state.currentScreen === 'lobby') audio.playPop();
     left.forEach(p => {
-      showLobbyAlert(`${p.nickname} saiu`, 'leave');
+      if (state.currentScreen === 'game') {
+        showGameAlert(`${p.nickname} saiu`, 'leave');
+      } else {
+        showLobbyAlert(`${p.nickname} saiu`, 'leave');
+      }
       audio.playSound('kill');
     });
     const previousMe = previousPlayers.find(p => p.id === state.myPlayerId);
     const currentMe = getMyPlayer();
-    if (currentMe && currentMe.host && (!previousMe || !previousMe.host)) {
-      showLobbyAlert('VocǦ agora Ǹ o HOST!', 'host');
+    if (state.currentScreen === 'lobby' && currentMe && currentMe.host && (!previousMe || !previousMe.host)) {
+      showLobbyAlert('Você agora é o HOST!', 'host');
       audio.playSound('leaderboard');
     }
   }
@@ -465,7 +498,34 @@ window.addEventListener('storage', event => {
   }
   if (state.currentScreen === 'game') {
     if (state.currentRoom.started) {
-      if (!state.gameState || !state.gameState.running) enterGameScreen();
+      const st = storage.readGameState();
+      if (st && st.running) {
+        if (!state.gameState || !state.gameState.running) enterGameScreen();
+      } else {
+        stopSimLoop();
+        stopGameWait();
+        stopCountdown();
+        state.gameState = null;
+        state.lastSeenRev = -1;
+        state.endShown = false;
+        audio.playMenuMusic();
+        showScreen('lobby');
+        renderLobby();
+        handleRoomStarted();
+      }
+    } else {
+      if (state.endShown) return;
+      const st = storage.readGameState();
+      if (st && st.roundResult) return;
+      stopSimLoop();
+      stopGameWait();
+      stopCountdown();
+      state.gameState = null;
+      state.lastSeenRev = -1;
+      state.endShown = false;
+      audio.playMenuMusic();
+      showScreen('lobby');
+      renderLobby();
     }
   } else if (state.currentScreen === 'lobby') {
     if (state.currentRoom.started) {
@@ -474,6 +534,8 @@ window.addEventListener('storage', event => {
       stopCountdown();
       stopGameWait();
       setStartButtonPressed(false);
+      showLobbyAlert('Contagem Interrompida', 'leave');
+      audio.playSound('kill');
     }
     renderLobby();
       joined.forEach(player => {
@@ -496,6 +558,12 @@ setInterval(() => {
     showScreen('welcome');
     return;
   }
+  if (state.currentScreen === 'game') {
+    result.removedPlayers.forEach(p => {
+      showGameAlert(`${p.nickname} saiu`, 'leave');
+      audio.playSound('kill');
+    });
+  }
   if (state.currentScreen !== 'lobby') return;
   result.removedPlayers.forEach(p => {
     showLobbyAlert(`${p.nickname} saiu`, 'leave');
@@ -507,42 +575,169 @@ setInterval(() => {
   }
   if (result.removedPlayers.length > 0) renderLobby();
 }, 2000);
-setInterval(input.publishMyInput, 250);
+setInterval(input.publishLocalInputs, 250);
 setInterval(() => {
-  if (state.currentScreen === 'game') input.publishMyInput();
+  if (state.currentScreen === 'game') input.publishLocalInputs();
 }, 33);
 
-let lastUiPad = null;
+const uiPadState = new Map();
+let lastPadPressed = new Map();
+const UI_MOVE_REPEAT_DELAY = 240;
+
+function applyUiMove(dir, playerId) {
+  if (dir === 'up') moveUiFocus(0, -1, playerId);
+  else if (dir === 'down') moveUiFocus(0, 1, playerId);
+  else if (dir === 'left') moveUiFocus(-1, 0, playerId);
+  else if (dir === 'right') moveUiFocus(1, 0, playerId);
+}
+
+function padPressedAny(pad) {
+  return (pad.buttons || []).some(btn => btn && btn.pressed);
+}
+
+function getUiPads() {
+  const result = [];
+  const pads = input.connectedGamepads();
+  const localIds = state.localPlayerIds || [];
+  const handled = new Set();
+  state.uiPadPlayerId = null;
+  if (!state.currentRoom && !state.myPlayerId) {
+    if (pads.length > 0) {
+      result.push({ pad: pads[0], playerId: null });
+    }
+    return result;
+  }
+  for (const id of localIds) {
+    const player = state.currentRoom && state.currentRoom.players.find(p => p.id === id);
+    if (!player) continue;
+    const assigned = storage.getGamepadAssignment(id);
+    if (assigned < 0) continue;
+    const pad = pads.find(p => p.index === assigned);
+    if (!pad || handled.has(pad.index)) continue;
+    handled.add(pad.index);
+    result.push({ pad, playerId: id });
+    state.uiPadPlayerId = id;
+  }
+  const room = state.currentRoom;
+  if (room && room.mode === 'local' && getPadConnectIndex() >= 0) {
+    const pad = pads.find(p => p.index === getPadConnectIndex());
+    if (pad && !handled.has(pad.index)) {
+      handled.add(pad.index);
+      result.push({ pad, playerId: null });
+    }
+  }
+  return result;
+}
+
+function checkLocalPadConnect() {
+  const room = state.currentRoom;
+  if (!room || room.mode !== 'local') return;
+  if (state.currentScreen !== 'lobby') return;
+  if (getPadConnectIndex() >= 0) return;
+  const pads = input.connectedGamepads();
+  for (const pad of pads) {
+    const pressed = padPressedAny(pad);
+    const prev = lastPadPressed.get(pad.index) || false;
+    lastPadPressed.set(pad.index, pressed);
+    if (!pressed || prev) continue;
+    const assignedTo = room.players.find(player => storage.getGamepadAssignment(player.id) === pad.index);
+    if (assignedTo) continue;
+    showPadConnect(pad.index);
+    return;
+  }
+}
+
+function padUiState(pad) {
+  let st = uiPadState.get(pad.index);
+  if (!st) {
+    st = {
+      prev: { up: false, down: false, left: false, right: false, a: false, b: false },
+      options: false,
+      dir: null,
+      accum: 0
+    };
+    uiPadState.set(pad.index, st);
+  }
+  return st;
+}
+
+function clearUiPadState() {
+  uiPadState.clear();
+}
 
 function pollUiGamepad() {
-  if (state.currentScreen === 'game') {
-    lastUiPad = null;
+  checkLocalPadConnect();
+  const inGame = state.currentScreen === 'game';
+  const modalOpen = !!document.querySelector('.modal:not(.hidden)');
+  const uiPads = getUiPads();
+
+  if (inGame && !modalOpen && !state.endShown) {
+    for (const { pad } of uiPads) {
+      const st = padUiState(pad);
+      const optionsPressed = !!(pad.buttons[9] && pad.buttons[9].pressed);
+      if (optionsPressed && !st.options) refs.gameQuitBtn.click();
+      st.options = optionsPressed;
+    }
+    clearUiPadState();
     return;
   }
-  const pad = input.connectedGamepads()[0];
-  if (!pad) {
-    lastUiPad = null;
+
+  if (uiPads.length === 0) {
+    clearUiPadState();
     return;
   }
-  const axis0 = pad.axes[0] || 0;
-  const axis1 = pad.axes[1] || 0;
-  const now = {
-    up: !!(pad.buttons[12] && pad.buttons[12].pressed) || axis1 < -0.5,
-    down: !!(pad.buttons[13] && pad.buttons[13].pressed) || axis1 > 0.5,
-    left: !!(pad.buttons[14] && pad.buttons[14].pressed) || axis0 < -0.5,
-    right: !!(pad.buttons[15] && pad.buttons[15].pressed) || axis0 > 0.5,
-    a: !!(pad.buttons[0] && pad.buttons[0].pressed),
-    b: !!(pad.buttons[1] && pad.buttons[1].pressed)
-  };
-  const prev = lastUiPad || { up: false, down: false, left: false, right: false, a: false, b: false };
-  lastUiPad = now;
-  const edge = (cur, p) => cur && !p;
-  if (edge(now.up, prev.up)) moveUiFocus(0, -1);
-  else if (edge(now.down, prev.down)) moveUiFocus(0, 1);
-  else if (edge(now.left, prev.left)) moveUiFocus(-1, 0);
-  else if (edge(now.right, prev.right)) moveUiFocus(1, 0);
-  if (edge(now.a, prev.a)) activateUiFocus();
-  if (edge(now.b, prev.b)) uiBack();
+
+  for (const { pad, playerId } of uiPads) {
+    const st = padUiState(pad);
+    const axis0 = pad.axes[0] || 0;
+    const axis1 = pad.axes[1] || 0;
+    const now = {
+      up: !!(pad.buttons[12] && pad.buttons[12].pressed) || axis1 < -0.5,
+      down: !!(pad.buttons[13] && pad.buttons[13].pressed) || axis1 > 0.5,
+      left: !!(pad.buttons[14] && pad.buttons[14].pressed) || axis0 < -0.5,
+      right: !!(pad.buttons[15] && pad.buttons[15].pressed) || axis0 > 0.5,
+      a: !!(pad.buttons[0] && pad.buttons[0].pressed),
+      b: !!(pad.buttons[1] && pad.buttons[1].pressed)
+    };
+    const prev = st.prev;
+    st.prev = now;
+    const optionsPressed = !!(pad.buttons[9] && pad.buttons[9].pressed);
+    const edge = (cur, p) => cur && !p;
+    if (edge(now.a, prev.a)) {
+      if (isCountdownActive() && isHost()) {
+        refs.countdownCancelBtn.click();
+        continue;
+      }
+      activateUiFocus(playerId);
+    }
+    if (edge(now.b, prev.b)) uiBack(playerId);
+    if (optionsPressed && !st.options) {
+      if (modalOpen) {
+        uiBack(playerId);
+      } else if (inGame && state.endShown) {
+        uiBack(playerId);
+      }
+    }
+    st.options = optionsPressed;
+
+    const heldDir = now.up ? 'up' : now.down ? 'down' : now.left ? 'left' : now.right ? 'right' : null;
+    if (heldDir) {
+      if (heldDir !== st.dir) {
+        st.dir = heldDir;
+        st.accum = 0;
+        applyUiMove(heldDir, playerId);
+      } else {
+        st.accum += 100;
+        if (st.accum >= UI_MOVE_REPEAT_DELAY) {
+          st.accum = 0;
+          applyUiMove(heldDir, playerId);
+        }
+      }
+    } else {
+      st.dir = null;
+      st.accum = 0;
+    }
+  }
 }
 
 setInterval(pollUiGamepad, 100);
@@ -557,7 +752,16 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+function prefillRoomCodeFromUrl() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const code = (params.get('room') || '').trim().toUpperCase();
+    if (code) refs.roomCodeInput.value = code;
+  } catch (error) {}
+}
+
 function initPage() {
+  prefillRoomCodeFromUrl();
   storage.syncRooms();
   if (state.currentRoom && state.myPlayerId) {
     if (state.currentRoom.started) {

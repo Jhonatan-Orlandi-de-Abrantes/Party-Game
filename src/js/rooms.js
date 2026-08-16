@@ -1,4 +1,4 @@
-import { state } from './state.js';
+import { state, saveLocalPlayers } from './state.js';
 import { ROOM_CODE_LENGTH, STALE_TIMEOUT } from './constants.js';
 import { loadRooms, saveRooms, removePlayerInput, gameKey, getDeviceId, getHat } from './storage.js';
 
@@ -19,19 +19,20 @@ export function randomColor() {
   return `#${[r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')}`;
 }
 
-export function createRoom(nickname, maxPlayers, mode = 'online') {
+export function createRoom(nickname, maxPlayers, mode = 'local') {
   if (!nickname) return 'Informe um apelido antes de criar a sala.';
   state.rooms = loadRooms();
   const code = randomCode();
   const playerId = crypto.randomUUID();
   const deviceId = getDeviceId();
-  const player = { id: playerId, nickname, color: randomColor(), host: true, joinedAt: Date.now(), lastSeen: Date.now(), deviceId, hat: getHat(deviceId) };
+  const player = { id: playerId, nickname, color: randomColor(), host: true, joinedAt: Date.now(), lastSeen: Date.now(), deviceId, hat: getHat(deviceId), score: 0 };
   const room = { code, players: [player], maxPlayers, started: false, ownerId: playerId, createdAt: Date.now(), mode };
   state.rooms.push(room);
   saveRooms();
   state.myPlayerId = playerId;
   state.myRoomCode = room.code;
   state.currentRoom = room;
+  saveLocalPlayers([playerId]);
   sessionStorage.setItem('bombPartyRoom', room.code);
   sessionStorage.setItem('bombPartyPlayerId', playerId);
   return null;
@@ -49,23 +50,51 @@ export function joinRoom(nickname, code) {
   }
   const playerId = crypto.randomUUID();
   const deviceId = getDeviceId();
-  const player = { id: playerId, nickname, color: randomColor(), host: false, joinedAt: Date.now(), lastSeen: Date.now(), deviceId, hat: getHat(deviceId) };
+  const player = { id: playerId, nickname, color: randomColor(), host: false, joinedAt: Date.now(), lastSeen: Date.now(), deviceId, hat: getHat(deviceId), score: 0 };
   room.players.push(player);
   saveRooms();
   state.myPlayerId = playerId;
   state.myRoomCode = room.code;
   state.currentRoom = room;
+  saveLocalPlayers([playerId]);
   sessionStorage.setItem('bombPartyRoom', room.code);
   sessionStorage.setItem('bombPartyPlayerId', playerId);
   return null;
 }
 
+export function addLocalPlayer(nickname) {
+  if (!state.currentRoom) return { error: 'Nenhuma sala ativa.' };
+  state.rooms = loadRooms();
+  const room = state.rooms.find(room => room.code === state.currentRoom.code);
+  if (!room) return { error: 'Sala não encontrada.' };
+  if (room.started) return { error: 'A partida já começou.' };
+  if (room.players.length >= room.maxPlayers) return { error: 'A sala está cheia.' };
+  if (room.players.some(player => player.nickname.toLowerCase() === nickname.toLowerCase())) {
+    return { error: 'Apelido já utilizado na sala. Use outro.' };
+  }
+  const playerId = crypto.randomUUID();
+  const deviceId = getDeviceId();
+  const player = { id: playerId, nickname, color: randomColor(), host: false, joinedAt: Date.now(), lastSeen: Date.now(), deviceId, hat: getHat(deviceId), local: true, score: 0 };
+  room.players.push(player);
+  saveRooms();
+  state.currentRoom = room;
+  saveLocalPlayers([...state.localPlayerIds, playerId]);
+  return { player };
+}
+
 export function leaveRoom() {
-  removePlayerFromRoom(state.myRoomCode, state.myPlayerId, false);
-  if (state.myPlayerId) removePlayerInput(state.myPlayerId);
+  const ids = [...new Set([state.myPlayerId, ...(state.localPlayerIds || [])].filter(Boolean))];
+  ids.forEach(id => {
+    removePlayerFromRoom(state.myRoomCode, id, false);
+    if (id) removePlayerInput(id);
+  });
   state.myRoomCode = null;
   state.myPlayerId = null;
+  state.localPlayerIds = [];
   state.currentRoom = null;
+  state.uiPadPlayerId = null;
+  state.configTargetId = null;
+  saveLocalPlayers([]);
   sessionStorage.removeItem('bombPartyRoom');
   sessionStorage.removeItem('bombPartyPlayerId');
 }
@@ -117,16 +146,22 @@ export function startGame(userRequested = true) {
 }
 
 export function heartbeat() {
-  if (!state.myRoomCode || !state.myPlayerId) return;
+  if (!state.myRoomCode) return;
   state.rooms = loadRooms();
   const room = state.rooms.find(room => room.code === state.myRoomCode);
   if (room) state.currentRoom = room;
-  const player = room && room.players.find(p => p.id === state.myPlayerId);
-  if (!room || !player) return;
+  if (!room) return;
   const now = Date.now();
-  if (player.lastSeen && now - player.lastSeen < 2000) return;
-  player.lastSeen = now;
-  saveRooms();
+  const ids = [...new Set([state.myPlayerId, ...(state.localPlayerIds || [])].filter(Boolean))];
+  let changed = false;
+  ids.forEach(id => {
+    const player = room.players.find(p => p.id === id);
+    if (player && player.lastSeen && now - player.lastSeen >= 2000) {
+      player.lastSeen = now;
+      changed = true;
+    }
+  });
+  if (changed) saveRooms();
 }
 
 export function cleanupStalePlayers() {
@@ -168,7 +203,9 @@ export function cleanupStalePlayers() {
     if (state.currentRoom && !state.rooms.some(room => room.code === state.currentRoom.code)) {
       state.myRoomCode = null;
       state.myPlayerId = null;
+      state.localPlayerIds = [];
       state.currentRoom = null;
+      saveLocalPlayers([]);
       sessionStorage.removeItem('bombPartyRoom');
       sessionStorage.removeItem('bombPartyPlayerId');
       droppedCurrent = true;
@@ -180,7 +217,7 @@ export function cleanupStalePlayers() {
 export function roomSignature(room) {
   if (!room) return null;
   const playersSig = room.players.map(player =>
-    `${player.id}|${player.nickname}|${player.host}|${player.color}|${player.hat || 'none'}`
+    `${player.id}|${player.nickname}|${player.host}|${player.color}|${player.hat || 'none'}|${player.score || 0}`
   ).join(',');
-  return `${room.code}|${room.started}|${room.maxPlayers}|${room.mode || 'online'}|${playersSig}`;
+  return `${room.code}|${room.started}|${room.maxPlayers}|${room.mode || 'local'}|${playersSig}`;
 }

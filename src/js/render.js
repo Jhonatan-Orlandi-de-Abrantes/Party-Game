@@ -1,5 +1,5 @@
 import { state, getMyPlayer } from './state.js';
-import { PLAYER_WIDTH, PLAYER_HEIGHT, DASH_COOLDOWN, BOMB_IMAGE_PATH, MAX_BOMB_TIME } from './constants.js';
+import { PLAYER_WIDTH, PLAYER_HEIGHT, DASH_COOLDOWN, BOMB_IMAGE_PATH, MAX_BOMB_TIME, TRAIL_LIFE } from './constants.js';
 import { getFpsEnabled, getFpsColor } from './storage.js';
 import { drawHat } from './hats.js';
 
@@ -51,6 +51,7 @@ export function drawScene() {
   });
 
   drawParticles();
+  drawTrails();
 
   gs.players.forEach(player => {
     if (!player.alive) return;
@@ -63,6 +64,7 @@ export function drawScene() {
     }
   });
 
+  drawLeaderCrown(gs, time);
   drawBombTimer(gs, time);
   drawStats();
 }
@@ -155,17 +157,15 @@ function drawPlayer(player, time) {
 
   ctx.restore();
 
-  if (player.id === state.myPlayerId) {
+  const isMine = player.id === state.myPlayerId || (state.localPlayerIds || []).includes(player.id);
+  if (isMine) {
     const pulse = 0.55 + Math.sin(time * 5) * 0.25;
-    ctx.strokeStyle = player.color;
-    ctx.lineWidth = 3;
     ctx.globalAlpha = pulse;
-    roundRectPath(ctx, x - 4, y - 4, w + 8, h + 8, 14);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
     ctx.fillStyle = player.color;
-    roundRectPath(ctx, player.x - w / 2 + 6, player.y + 5, w - 12, 5, 3);
+    const fw = w * 0.5;
+    roundRectPath(ctx, player.x - fw / 2, player.y - 4, fw, 5, 3);
     ctx.fill();
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -181,6 +181,7 @@ function drawNickname(player) {
 
 function drawBombTimer(gs, time) {
   if (gs.bombTime === undefined) return;
+  if (!gs.players.some(player => player.alive && player.hasBomb)) return;
   const frac = gs.bombTime / MAX_BOMB_TIME;
   let color = '#2ecc40';
   if (frac <= 0.33) color = '#e74c3c';
@@ -213,34 +214,75 @@ function drawBombTimer(gs, time) {
 
 function drawDashIndicator(player, time) {
   const cx = player.x;
-  const cy = player.y - PLAYER_HEIGHT - 16;
-  const radius = 7;
+  const cy = player.y + 12;
+  const barW = 34;
+  const barH = 7;
   const progress = player.dashCooldown === 0 ? 1 : 1 - player.dashCooldown / DASH_COOLDOWN;
 
-  ctx.beginPath();
-  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
   ctx.fillStyle = 'rgba(34,34,34,0.5)';
+  roundRectPath(ctx, cx - barW / 2, cy, barW, barH, 3);
   ctx.fill();
 
   if (progress >= 1) {
-    const pulse = 1 + Math.sin(time * 6) * 0.14;
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius * pulse, 0, Math.PI * 2);
+    const pulse = 0.7 + Math.sin(time * 6) * 0.3;
+    ctx.globalAlpha = pulse;
     ctx.fillStyle = '#2ecc40';
+    roundRectPath(ctx, cx - barW / 2, cy, barW, barH, 3);
     ctx.fill();
+    ctx.globalAlpha = 1;
   } else {
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
-    ctx.strokeStyle = '#ffe066';
-    ctx.lineWidth = 4;
-    ctx.stroke();
+    const fillW = Math.max(1, barW * progress);
+    ctx.fillStyle = '#ffe066';
+    roundRectPath(ctx, cx - barW / 2, cy, fillW, barH, 3);
+    ctx.fill();
   }
 
-  ctx.strokeStyle = '#222';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(34,34,34,0.6)';
+  ctx.lineWidth = 1;
+  roundRectPath(ctx, cx - barW / 2, cy, barW, barH, 2);
   ctx.stroke();
+}
+
+function drawLeaderCrown(gs, time) {
+  const room = state.currentRoom;
+  if (!room) return;
+  const scored = room.players.filter(player => (player.score || 0) > 0);
+  if (scored.length === 0) return;
+  const maxScore = Math.max(...scored.map(player => player.score || 0));
+  const leaders = scored.filter(player => (player.score || 0) === maxScore);
+  if (leaders.length !== 1) return;
+  const leaderId = leaders[0].id;
+  gs.players.forEach(player => {
+    if (!player.alive || player.id !== leaderId) return;
+    const bob = Math.sin(time * 3) * 2;
+    const cy = player.y - PLAYER_HEIGHT - 52 - (player.hasBomb ? 26 : 0);
+    ctx.save();
+    ctx.translate(player.x, cy + bob);
+    ctx.shadowColor = '#ffd23f';
+    ctx.shadowBlur = 14 + Math.sin(time * 5) * 6;
+    ctx.fillStyle = '#ffd23f';
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-15, 2);
+    ctx.lineTo(-15, -12);
+    ctx.lineTo(-8, -4);
+    ctx.lineTo(0, -15);
+    ctx.lineTo(8, -4);
+    ctx.lineTo(15, -12);
+    ctx.lineTo(15, 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#e03131';
+    [[-8, -3], [0, -7], [8, -3]].forEach(([jewelX, jewelY]) => {
+      ctx.beginPath();
+      ctx.arc(jewelX, jewelY, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.restore();
+  });
 }
 
 function drawBomb(x, y, w, h) {
@@ -273,9 +315,35 @@ function drawParticles() {
   particles.forEach(particle => {
     ctx.globalAlpha = Math.max(0, particle.life / particle.maxLife);
     ctx.fillStyle = particle.color;
-    ctx.beginPath();
-    ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
-    ctx.fill();
+    if (particle.shape === 'square') {
+      ctx.save();
+      ctx.translate(particle.x, particle.y);
+      ctx.rotate(particle.rotation || 0);
+      const s = particle.size;
+      ctx.fillRect(-s / 2, -s / 2, s, s);
+      ctx.restore();
+    } else {
+      ctx.beginPath();
+      ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+  ctx.globalAlpha = 1;
+}
+
+function drawTrails() {
+  const gs = state.gameState;
+  const trails = (gs && gs.trails) || [];
+  const now = gs.time || 0;
+  trails.forEach(t => {
+    const age = now - (t.t || 0);
+    if (age < 0 || age > TRAIL_LIFE) return;
+    const alpha = Math.max(0, 1 - age / TRAIL_LIFE) * 0.35;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = t.color;
+    const size = 6;
+    const rise = age * 20;
+    ctx.fillRect(t.x - size / 2, t.y - size / 2 - rise, size, size);
   });
   ctx.globalAlpha = 1;
 }
@@ -283,9 +351,9 @@ function drawParticles() {
 let fpsFrames = 0;
 let fpsLastTime = performance.now();
 let fpsDisplay = 0;
+let statsBoxW = 0;
 
 function drawStats() {
-  if (state.currentRoom && state.currentRoom.mode === 'local') return;
   const me = getMyPlayer();
   if (!me || !getFpsEnabled(me.id)) return;
   const gs = state.gameState;
@@ -301,23 +369,34 @@ function drawStats() {
   const ping = gs && gs.t ? Math.max(0, Date.now() - gs.t) : 0;
   const color = getFpsColor(me.id);
 
+  ctx.font = 'bold 11px Consolas, monospace';
+  if (!statsBoxW) {
+    statsBoxW = Math.ceil(Math.max(
+      ctx.measureText('FPS 999').width,
+      ctx.measureText('Ping 999ms').width));
+  }
+
+  const lines = [`FPS ${fpsDisplay}`, `Ping ${ping}ms`];
+
+  const padX = 14;
+  const boxW = statsBoxW + padX * 2;
+  const boxH = 42;
+  const boxY = 16;
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
-  roundRectPath(ctx, 10, 10, 148, 46, 8);
+  roundRectPath(ctx, 10, boxY, boxW, boxH, 8);
   ctx.fill();
   ctx.strokeStyle = 'rgba(255,255,255,0.7)';
   ctx.lineWidth = 2;
-  roundRectPath(ctx, 10, 10, 148, 46, 8);
+  roundRectPath(ctx, 10, boxY, boxW, boxH, 8);
   ctx.stroke();
 
-  ctx.font = 'bold 15px Consolas, monospace';
   ctx.textAlign = 'left';
   ctx.lineWidth = 3;
   ctx.strokeStyle = '#fff';
-  const lines = [`FPS ${fpsDisplay}`, `Ping ${ping}ms`];
   lines.forEach((line, index) => {
-    const ty = 30 + index * 20;
-    ctx.strokeText(line, 16, ty);
+    const ty = boxY + 17 + index * 19;
+    ctx.strokeText(line, 10 + padX, ty);
     ctx.fillStyle = color;
-    ctx.fillText(line, 16, ty);
+    ctx.fillText(line, 10 + padX, ty);
   });
 }

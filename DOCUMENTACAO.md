@@ -1,4 +1,4 @@
-# Bomb Party — Documentação do Projeto
+# Party Game — Documentação do Projeto
 
 > **Objetivo deste arquivo:** explicar o que é o projeto, como funciona e para que
 > serve cada pasta/arquivo, para que uma IA (ou outro desenvolvedor) entenda o
@@ -8,7 +8,7 @@
 
 ## 1. O que é o projeto
 
-**Bomb Party** é um jogo de plataforma multiplayer **local** (roda em um único
+**Party Game** é um jogo de plataforma multiplayer **local** (roda em um único
 computador), inspirado em jogos como *PICO PARK* e *Level Devil*.
 
 - Cada jogador abre o jogo em uma **aba/janela diferente** do navegador (ou em
@@ -34,13 +34,81 @@ continua contando. O último de pé vence e vê uma tela de vitória com coroa �
 - Tela de configurações em aba deslizante (engrenagem no lobby): cor e chapéu do
   personagem, auto-pass, atalhos personalizáveis (com reset), FPS/ping, limite
   de FPS, resolução do jogo e volume de música/efeitos.
-- Dois modos de partida ao criar a sala: **Online** (uma tela por player) e
-  **Multijogador local** (uma tela só, com overlay de FPS/ping desativado).
+- **Lobby:** o **código da sala (4 letras) aparece em negrito**; o contador
+  **"Jogadores: x/y"** é **negrito** e colorido — **amarelo** enquanto houver
+  vaga, **verde** quando a sala está cheia — e "Jogadores na sala" e os blocos
+  de jogador têm margem extra.
+- **Dash indicator:** a barrinha de cooldown do dash foi **ampliada** (34×7, mais
+  larga e mais alta, posicionada abaixo do jogador).
+- **Partida mista (sem seletor de modo):** ao clicar em **"Criar sala"** a sala
+  já é criada (sem modal de modo). Os jogadores podem jogar tanto em **abas
+  separadas** quanto **na mesma tela** (com controle). O botão **"Convidar"**
+  fica sempre visível no lobby.
+- **Modo Local na mesma tela (até 4 jogadores):** ao conectar um controle e
+  pressionar qualquer botão, abre um modal perguntando se o controle deve ser
+  **atribuído a um jogador existente** desta tela ou se deve **criar um novo
+  jogador** (pede um apelido). O novo jogador entra na sala, controla com o
+  gamepad e configura **só cor e chapéu** na aba de configurações (o **título
+  da aba** mostra "Configurações de {nome}" — nome na cor do jogador, com
+  reticências "…" quando o apelido é muito longo — indicando quem está sendo
+  editado). Vários jogadores
+  locais são publicados como inputs separados (cada um no seu playerId).
+- **Convite:** o lobby tem o botão **"Convidar"** (vermelho claro), que abre
+  um modal com o **link de convite** (`...?room=CÓDIGO`) e botão "Copiar link".
+  Quem abre o link tem o código **pré-preenchido** na tela inicial — basta
+  digitar o apelido e entrar.
+- **Menus por controle:** cada aba só responde ao gamepad **atribuído a um
+  jogador daquela aba** — corrige o bug em que um controle agia nos menus de
+  duas abas ao mesmo tempo. O seletor de menu (`ui-focus`) fica **na cor do
+  jogador** que está usando aquele controle.
+- **Dois controles navegando menus ao mesmo tempo:** o foco de menu é **por
+  jogador** (`uiFocusMap`, uma chave por jogador local + teclado), então dois
+  gamepads (ou um gamepad + teclado) podem focar elementos diferentes no mesmo
+  lobby/configurações simultaneamente, cada um na cor do seu jogador. As
+  configurações seguem **quem abriu** (`configTargetId`).
+- **"Options" em jogo:** apertar o botão **Options** do controle abre a tela de
+  **"Voltar para o lobby?"** (Confirmar/Cancelar); apertar de novo fecha e
+  volta ao jogo. O ✕ da tela de jogo faz o mesmo.
+- **Dash nos dois gatilhos:** RT **ou** LT disparam o dash (legenda "Dash:
+  RT/LT").
+- **Partículas de caminhada:** quadrados sólidos da cor do personagem (sem
+  borda), que sobem levemente e somem — visual puro, sem elipse/contorno.
 - Chapéus personalizados (persistidos por navegador via `deviceId`).
 - Timer da bomba no **topo central** da tela em fonte pixel, com cores por
   urgência (verde → amarelo → vermelho pulsante).
-- Indicador visual do seu personagem (borda pulsante + sublinhado na cor
-  escolhida).
+- Indicador visual do seu personagem: **barra horizontal sob os pés** (16×4)
+  pulsante na cor escolhida, que também serve de **medidor do cooldown do dash**
+  (preenche em amarelo durante o cooldown e volta a pulsar verde quando pronto)
+  — mostrado para **todos os jogadores locais** da aba, no lugar da antiga
+  borda.
+- **Placar de pontuação:** ao fim de cada rodada o jogo dá **pontos distintos**
+  por posição (vencedor primeiro, depois os demais pela pontuação acumulada,
+  perdedor da rodada por último; pontos = nº de jogadores − posição). A pontuação
+  de cada jogador persiste na sala e o placar aparece no fim da rodada com
+  **1º 👑 (coroa brilhante), 2º, 3º, 4º** — um lugar para cada jogador.
+- **Fim de rodada na mesma tela:** mostra **somente o placar** com o título
+  **"👑 {NOME} VENCEU! 👑"** — nome do vencedor na cor dele — sem tela de
+  "Explodiu"/"Ganhou", sem confete e sem
+  som de vitória (só o contador regressivo toca). Os nomes no placar aparecem
+  **na cor de cada jogador**. O gamepad **age na mensagem na 1ª apertada do A**
+  (foca e já confirma "Voltar para o lobby").
+- **"Você":** jogadores da **mesma tela** aparecem marcados como **"Você"** no
+  lobby (para os que estão em outra aba, o nome do jogador local é mostrado).
+- **Menu de cosméticos com direcional:** o seletor de chapéus navega em **grade
+  2D** (cima/baixo/esquerda/direita) com o controle, com wrap por linha e
+  "Fechar" no fim da lista. As colunas são detectadas em tempo real pela
+  **posição real de cada item** (`getBoundingClientRect`), funcionando em
+  qualquer largura de tela, mesmo com a grade rolada.
+- **Menu por controle sem auto-clique:** o seletor de controle (Teclado/
+  Controle) **não muda mais com o direcional** — só com o botão de confirmação
+  (A, abre as opções nativas via `showPicker`), evitando que o menu "entre
+   sozinho". O seletor é editável também pelos **jogadores locais** desta tela
+   (e o HOST). Botão **Options/B** fecha modais, a aba de configurações e, no fim
+   da partida, volta ao lobby.
+- **Instruções e código da sala:** o texto "Como jogar" do lobby agora explica
+  o objetivo da partida ("Encoste em outro jogador para passar a bomba…") e o
+  **código da sala fica centralizado** no topo do lobby, com o espaçamento
+  adequado entre o placar e o botão "Voltar para lobby".
 
 ---
 
@@ -56,11 +124,16 @@ npx serve .
 
 Depois abra `http://localhost:8000` em **duas ou mais abas/janelas** do mesmo
 navegador:
-1. Na primeira aba, escolha o **modo** (Online / Multijogador local) e crie uma
-   sala (vira HOST).
-2. Nas outras, entrem com o código da sala.
+1. Na primeira aba, clique em **"Criar sala"** e crie a sala (vira HOST). Não há
+   escolha de modo — a partida é mista (abas separadas e/ou mesma tela).
+2. Nas outras, entrem com o código da sala (ou pelo **link de convite**
+   `?room=CÓDIGO`, que pré-preenche o código).
 3. No lobby, cada um escolhe seu controle (Teclado / Controle 1–4) e pode abrir
    a engrenagem ⚙ para ajustar cor, chapéu, atalhos, FPS, resolução e volume.
+   Conecte um controle e pressione um botão: o jogo pergunta
+   se você quer **atribuir o controle a um jogador desta tela** ou **criar um
+   novo jogador** (com apelido) — assim dá para jogar com até 4 jogadores numa
+   única tela.
 4. O HOST clica em "Iniciar partida".
 
 **Importante:** como usa `localStorage`, todos os jogadores devem estar no
@@ -72,7 +145,7 @@ mesmo navegador e na mesma origem. Não funciona entre máquinas diferentes
 ## 3. Estrutura de pastas e arquivos
 
 ```
-BombParty/
+PartyGame/
 ├── index.html              → Estrutura HTML das telas (welcome, lobby, game) + popups/modal
 ├── IDEIAS-APLICACOES.txt   → Lista de ideias pedidas já implementadas e futuras
 ├── JOGOS-REFERENCIA.txt    → Jogos usados como referência visual/sonora
@@ -100,11 +173,11 @@ BombParty/
 │   ├── game/               → Música da partida (gm1.mp3 … gm11.mp3)
 │   └── game-RUN/           → Reservado para futuro modo "CORRA!" (gmr1.mp3)
 └── sounds/
-    ├── jump/               → Sons de pulo
-    ├── kill/               → Sons de explosão/morte
-    ├── leaderboard/        → Sons de placar
-    ├── start-countdown/    → Sons de contagem regressiva
-    └── victory/            → Sons de vitória
+    ├── countdown/           → Sons de contagem regressiva (countdown.mp3, start-menu.mp3)
+    ├── jump/                → Sons de pulo (sorteado dinamicamente da pasta: jump1.mp3, …)
+    ├── kill/                → Sons de explosão/morte
+    ├── leaderboard/         → Sons de placar
+    └── victory/             → Sons de vitória
 ```
 
 ---
@@ -136,9 +209,20 @@ BombParty/
 - Configura músicas (menu vs. jogo), efeitos de botão, confete ao iniciar
   partida, e os handlers da UI (cor, auto-pass, FPS/ping, resolução, volume).
 - **Confirmações:** sair da sala (lobby e aba de configs) e voltar ao lobby
-  durante o jogo (botão ✕) passam por um modal de confirmação.
-- Intervals: `heartbeat` (mantém jogador vivo), `cleanupStalePlayers`
-  (remove inativos), publicação de input.
+  durante o jogo (botão ✕ ou botão **Options** do controle) passam por um modal
+  de confirmação. Em jogo, apertar **Options** abre o modal e apertar de novo o
+  fecha (volta ao jogo).
+- **Menus por controle (`pollUiGamepad`):** a aba só reage ao gamepad
+  **atribuído a um jogador desta aba** (`localPlayerIds`). Isso corrige o bug de
+  um controle agir nos menus de duas abas ao mesmo tempo.
+- **Modo Local — conectar controle (`checkLocalPadConnect`):** no lobby,
+  se um controle **não atribuído** tiver um botão pressionado, abre o modal de
+  atribuição (`showPadConnect`) — atribuir a um jogador desta tela ou criar um
+  novo jogador.
+- **Convite (`?room=CÓDIGO`):** o link é montado no lobby e o código é
+  **pré-preenchido** na tela inicial por `prefillRoomCodeFromUrl()`.
+- Intervals: `heartbeat` (mantém jogadores vivos), `cleanupStalePlayers`
+  (remove inativos), publicação de input (`publishLocalInputs`).
 
 ### `src/js/constants.js`
 - Todas as constantes ajustáveis do jogo: tempo da bomba (`MAX_BOMB_TIME = 15`),
@@ -153,6 +237,12 @@ BombParty/
 - Objeto `state` global: salas, jogador atual, estado do jogo, teclas
   pressionadas, partículas, imagem da bomba, flags de tela e os controles de
   loop (`accTime`, `lastFrameTime`).
+- **Jogadores locais da aba:** `localPlayerIds` (array de playerIds que esta
+  aba controla — pode ter vários) e `saveLocalPlayers(ids)` que
+  persiste em `sessionStorage` (`bombPartyLocalPlayers`).
+- **Quem está sendo configurado:** `configTargetId` (player da aba de
+  configurações) e `uiPadPlayerId` (dono do gamepad que navegou por último —
+  define o alvo ao abrir a aba de configurações pelo menu).
 - Helpers: `getMyPlayer()` (meu player na sala atual), `isHost()`,
   `getControlsForPlayer()`.
 
@@ -175,32 +265,44 @@ BombParty/
 
 ### `src/js/rooms.js`
 - Criação/entrada em salas, geração de código (`randomCode`) e cor (`randomColor`).
-- `createRoom(nickname, maxPlayers, mode)`: `mode` é `'online'` (padrão) ou
-  `'local'`. Cada jogador recebe `deviceId` (do navegador) e `hat` salvo.
+- `createRoom(nickname, maxPlayers, mode)`: `mode` é `'local'` (padrão) — a
+  partida é **mista** (abas separadas e/ou mesma tela). Cada jogador recebe
+  `deviceId` (do navegador), `hat` salvo e `score: 0`. Ao criar/entrar,
+  `localPlayerIds` é resetado para `[meu playerId]`.
+- `addLocalPlayer(nickname)`: cria um **jogador local** na sala atual (marca
+  `local: true`), valida (sala cheia / apelido repetido / partida iniciada) e
+  adiciona o id a `localPlayerIds`. Retorna `{ player }` ou `{ error }`.
 - `leaveRoom` / `removePlayerFromRoom`: remoção com **transferência de host**
-  (o primeiro jogador restante vira host).
+  (o primeiro jogador restante vira host). `leaveRoom` agora remove **todos os
+  jogadores locais da aba** e limpa `localPlayerIds`.
 - `startGame`: valida (só host, mínimo 2 jogadores) e marca `room.started`.
-- `heartbeat`: atualiza `lastSeen` de cada jogador a cada ~2s.
-- `cleanupStalePlayers`: remove jogadores inativos (8s), transfere host e
-  **retorna** `{ dropped, removedPlayers }` para a UI exibir alertas de saída
-  detectados localmente (sem depender de evento `storage`).
-- `roomSignature`: assinatura da sala (inclui `mode` e `hat` de cada player)
-  usada para detectar mudanças entre abas.
+- `heartbeat`: atualiza `lastSeen` de **todos os jogadores locais** (meu player
+  + `localPlayerIds`) a cada ~2s, para os locais não caírem como inativos.
+- `cleanupStalePlayers`: remove jogadores inativos (8s), transfere host,
+  limpa `localPlayerIds` se a sala atual sumir e **retorna**
+  `{ dropped, removedPlayers }` para a UI exibir alertas de saída detectados
+  localmente (sem depender de evento `storage`).
+- `roomSignature`: assinatura da sala (inclui `mode`, `score` e `hat` de cada
+  player) usada para detectar mudanças entre abas.
 
 ### `src/js/input.js`
 - `getEffectiveControls(playerId)`: retorna os atalhos **efetivos** de um player
   (atos customizados via `bombPartyKeys_<id>` sobrepostos ao `controlSets`
   padrão).
-- `publishMyInput()`: monta o objeto de teclas (esquerda/direita/pular/passar/
-  dash) do **meu** player — teclado (com atalhos efetivos) + gamepad (se
-  atribuído) — e grava no `localStorage`.
+- `publishPlayerInput(playerId, includeKeyboard)`: monta o objeto de teclas
+  (esquerda/direita/pular/passar/dash) de **qualquer** player — teclado (se
+  `includeKeyboard`) + gamepad atribuído — e grava no `localStorage`.
+- `publishMyInput()`: wrapper do meu player (teclado + gamepad).
+- `publishLocalInputs()`: publica o input de **todos os jogadores locais da
+  aba** (`localPlayerIds`; o teclado só vale para o player principal `myPlayerId`).
+  Usado pelos intervals do main.js.
 - `getPlayerKeys(player)`: lê o input de qualquer player (usado pelo host na
   simulação).
 - `readGamepad`/`connectedGamepads`: Gamepad API. Mapeamento do controle:
   - Mover: analógico esquerdo (ou direcional)
   - Pular: botão **A** (ou direcional para cima)
   - Passar: botão **X** (ou **Y**)
-  - Dash: **RT** (ou **B**)
+  - Dash: **RT** ou **LT** (ou **B**)
 - `onKeyDown`/`onKeyUp`: registram teclas e publicam imediatamente.
 
 ### `src/js/game.js` (simulação — só roda no HOST)
@@ -214,32 +316,185 @@ BombParty/
 - `endRound()`: explodiu → marca `running=false`, define o **resultado** com
   `winnerId`, `loserId`, `loserName`, grava `gs.roundResult`, publica o estado
   (para os clientes verem o fim da rodada) e chama `onRoundEnd`.
+- `awardRoundPoints(result)`: **placar de pontuação** — ordena os jogadores
+  (vencedor em 1º, demais por pontuação acumulada, perdedor da rodada em
+  último), dá `n − posição` pontos (n = nº de jogadores, sempre distintos),
+  persiste (`saveRooms`) e anexa `result.scoreboard = [{id, nickname, color,
+  score, place}]`.
 - `spawnDashParticles`: cria as partículas cinzas do dash (sobem, somem).
+- **Rastro de "vento" no pé:** ao correr no chão, registra pontos no pé com o
+  timestamp do jogo (`t: gs.time`); pontos antigos são podados após
+  `TRAIL_LIFE` (0.35s).
 
 ### `src/js/render.js` (desenho no canvas)
 - `drawScene()`: fundo, plataformas, partículas, personagens (com chapéu),
-  bombas, dash indicator, **timer central** e overlay de FPS/ping.
+  bombas, dash indicator, **timer central**, **coroa do líder** e overlay de
+  FPS/ping.
+- `drawLeaderCrown()`: coroa dourada **brilhante** (pulso de `shadowBlur`)
+  acima do **líder** (único jogador com maior `score` > 0), desenhada após os
+  personagens.
 - `setResolutionScale(scale)`: o canvas é desenhado sempre no espaço lógico
   **1080×540**; a escala só muda o tamanho do backing store (`setTransform`).
 - `drawPlayer()`: personagens estilo **PICO PARK** (corpo redondo, pés, olhos,
   boca) com **animação ao andar** (pés balançam + corpo quica) e **ao pular**
-  (corpo estica, pés recolhidos). O **seu** personagem recebe uma borda pulsante
-  + sublinhado na cor selecionada (`player.id === state.myPlayerId`).
+  (corpo estica, pés recolhidos). O **seu** personagem (e **todos os jogadores
+  locais** da aba) recebe uma **barra horizontal sob os pés** (16×4) na cor
+  selecionada: verde pulsante quando o dash está pronto, amarela preenchendo
+  durante o cooldown (`drawDashIndicator`).
 - `drawBombTimer()`: **topo central** da tela, fundo escuro com borda branca e
   fonte pixel ("Press Start 2P"). Cor por urgência: verde (>66%), amarelo
   (33–66%), vermelho (≤33%, com pulso de escala).
 - `drawParticles()`: desenha `gameState.particles` (as cinzas do dash) com
   transparência conforme a vida.
-- `drawStats()`: canto superior esquerdo — **FPS e Ping** — com cor configurável
-  por player. **Oculto no modo `local`** (`room.mode === 'local'`).
+- `drawStats()`: canto superior esquerdo — **FPS e Ping** — em **caixa
+  estática** (`measureText('FPS 999')` e `'Ping 999ms'` calculados uma única
+  vez; a largura da caixa **não muda** conforme o texto oscila, só os valores
+  mudam; caixa e texto ficam um pouco **mais abaixo** do topo) com cor
+  configurável por player.
+- `drawTrails()`: desenha o **vento** do pé dos personagens — **quadrados**
+  sólidos na cor do personagem (sem borda, sem elipse), alpha máximo 0.35, sobem
+  levemente e somem após `TRAIL_LIFE`.
 
 ### `src/js/hats.js`
 - `HATS`: catálogo com `id` e `name` (primeira opção é `none` = **Vazio**).
+  Lista atual inclui: `hollow`, `cap`, `cap-red`, `cap-green`, `cap-colorido`
+  (Boné colorido), `cap-p` (Chapéu de detetive, pixel), `scarf` (Cachecol
+  vermelho), `scarf-green` (Cachecol verde), `scarf-blue` (Cachecol azul),
+  `oculos-soldador`, `crown`, `crown-p`, `party`, `headphones`, `chef`, `spidey`
+  (**Homem-aranha**, fantasia de corpo inteiro), `flash` (**Flash**), `plunger`,
+  `fuse`, `amongus` (Tripulante), `chicken`, `creeper`, `sans`,
+  `cavalheiro` (Cavalheiro Branco), `cavalheiro-negro` (Cavalheiro Negro) e os
+  cosméticos temáticos (referências em `REFERENCIAS/`): `cupcake` (Cupcake da
+  Chica com vela acesa),
+  `guitarra` (Guitarra do Bonnie, menor e na diagonal do peito),
+  `foxy` (FNAF — orelhas de raposa + tapa-olho + focinho com dentes escuros),
+  `rick` (Cabelo do Rick), `kaneki-mask` (Máscara do
+  Kaneki), `avatar` (Mestre do ar — tatuagem de **seta azul na testa** apontando
+  para baixo, inteiramente sobre a cabeça, sem nada flutuando),
+  `miles` (Roupa Miles Morales),
+  `venom` (Roupa Venom) e `ironman` (Roupa Homem
+  de Ferro).
+- **Pixel art** (`PIXEL_HATS`): definidos por `palette` + `rows` + `cell` (px por
+  célula, padrão 3) + `dy` (deslocamento vertical, positivo desce). São eles:
+  `cap-p`, `crown-p`.
+  - `cap-p`: `cell: 3, dy: -22` → assenta **sobre o topo da cabeça** (o topo do
+    boné fica ~22px acima da cabeça e a borda assenta na cabeça). Aba larga: a
+    última linha do grid é 1 célula mais larga de cada lado (pontas esquerda e
+    direita da aba mais distantes, para fora da cabeça) mantendo a coroa do
+    mesmo tamanho.
+  - `crown-p`: `cell: 3, dy: -19` → tamanho padrão (não grande), com a borda
+    assente **no topo da cabeça** (base em `top+2`; antes ficava sobre o rosto
+    com `dy: -2`).
+- **Cavalheiro Branco / Negro (`drawOldHornetMask`)**: elmo com ponta
+  arredondada no topo, espinhos laterais e costura no centro, **ampliado
+  (~1.5×) para cobrir a cabeça do personagem até a boca** (base em `top+27`).
+  O Branco usa as cores da Hornet (`#f5f0e6` claro / `#222` escuro); o Negro
+  usa o mesmo modelo só invertendo as cores (elmo `#1a1a1f` com detalhes/
+  contorno claros `#e8e8e8`).
+- **Knight (`hollow`)**: máscara clara que **cobre o rosto inteiro** (não fica
+  menor que o personagem), **dois chifres curvados** para fora no topo e dois
+  olhos escuros alinhados com os olhos do personagem.
+- **Bonés (`cap`, `cap-red`, `cap-green`) e Boné colorido (`cap-colorido`)**:
+  mesmo modelo, somente **aumentados (~1.25×)** para não ficarem pequenos na
+  cabeça. O colorido divide o domo em painéis arco-íris (helper
+  `drawColorfulCap`, com `clip`).
+- **Cachecóis (`scarf`, `scarf-green`, `scarf-blue`)**: mesmo modelo ampliado
+  (helper `drawScarf`) que agora **envolve o pescoço** do personagem (faixa
+  larga na base do corpo, com as duas pontas balançando), em três cores:
+  vermelho, verde e azul.
+- **Roupas de corpo inteiro:** `spidey` (fantasia do **Homem-aranha** cobrindo
+  o corpo todo: torso vermelho com teias radiais + horizontais e **painéis
+  azuis laterais**, pernas azuis com **botas vermelhas**, faixa azul no
+  quadril, emblema de aranha no peito e olhos brancos grandes), `amongus`/
+  Tripulante (macacão na cor do personagem, **alargado para não parecer dentro
+  do corpo**, mochila e visor azul claro que acompanha a direção), `sans`
+  (moletom azul com capuz/branco, bermuda preta com faixa e pantufas rosa
+  **abaixo do rosto** — o rosto do personagem fica visível, sem o círculo
+  escuro sobre os olhos, com o **olho azul brilhante apenas no olho direito**).
+- **Máscaras:** `chicken` (galinha estilo Hotline Miami — cabeça branca
+  **ampliada para não ficar menor que o rosto**, crista vermelha **grudada no
+  topo da cabeça**, bico laranja e olhos escuros), `creeper` (boca exata do
+  jogo: barra superior + duas pernas formando o "⊓" carrancudo, **ampliada para
+  cobrir o corpo inteiro do boneco**).
+- **Coroa (`crown`) e Coroa Pixel (`crown-p`)**: modelos mantidos; a coroa
+  normal voltou ao tamanho anterior; a pixel ficou no tamanho padrão (cell 3)
+  **posicionada na cabeça** (base em `top+2`, não mais sobre o rosto).
+- **Chapéu de festa (`party`), Headphones e Chapéu de chef (`chef`)**: modelos
+  mantidos, somente **ampliados** para não ficarem pequenos na cabeça.
 - `drawHat(ctx, player, hatId)`: desenha o chapéu sobre o personagem (topo,
   direção da face, balanço) — usado dentro do `drawPlayer` para acompanhar a
   animação/squash.
-- `drawHatPreview(ctx, hatId)`: mini personagem + chapéu em canvas 96×96 para o
-  seletor de chapéus.
+- `drawHatPreview(ctx, hatId)`: preview em canvas 96×96 para o seletor de
+  chapéus — usa o **mesmo modelo do jogo** (`PLAYER_WIDTH`×`PLAYER_HEIGHT`,
+  40×44, rosto/olhos/boca idênticos ao `drawPlayer`) em pose parada, para que o
+  que aparece no seletor seja idêntico ao que aparece em jogo.
+
+### Como "enxergar" as referências de chapéus (método usado pelas IAs)
+
+Ao criar/editar um cosmético temático, a referência é uma **imagem** em
+`REFERENCIAS/` e a IA não consegue vê-la diretamente. O método usado foi:
+
+1. **Gerar uma "leitura" da imagem** com um script Python (PIL). O script:
+   - redimensiona a imagem para uma grade de largura fixa (**W = 54** células),
+     mantendo a proporção;
+   - para cada célula imprime um **caractere de brilho** (`@` mais escuro, ` `
+     mais claro: `@%#*+=-:. `);
+   - sobrepõe a **inicial da cor dominante** da célula (letra maiúscula):
+     `R` vermelho, `O` laranja, `Y` amarelo, `G` verde, `C` ciano, `B` azul,
+     `P` rosa, `M` magenta/roxo, `K` preto, `b` marrom, `w` branco, `g` cinza;
+   - imprime uma **legenda das cores** reais usadas (hex) para copiar tons
+     fielmente.
+2. **Ler a grade** como se fosse a imagem: cada célula ≈ `largura_da_cabeça / 54`
+   unidades no espaço do personagem (a cabeça tem 40px de largura; usar a escala
+   `s = h/44` para converter para o tamanho do jogador).
+3. **Traduzir** as formas observadas para primitivas de canvas (`rr`, `ellipse`,
+   `ellipsePath`, `beginPath` + `quadraticCurveTo`, etc.), preservando
+   proporções e cores.
+
+Para reproduzir, o script de exemplo (`imgscan.py`, feito em Python com Pillow):
+
+```python
+from PIL import Image
+img = Image.open('referencia.png').convert('RGB')
+W = 54
+H = max(1, round(img.height * W / img.width))
+img = img.resize((W, H))
+BR = '@%#*+=-:. '
+def letter(c):
+    r, g, b = c
+    if min(r,g,b) > 235: return 'w'
+    if max(r,g,b) < 25: return 'K'
+    if r>140 and g<90 and b<90: return 'R'
+    if r>170 and 90<g<170 and b<90: return 'O'
+    if r>170 and g>170 and b<90: return 'Y'
+    if r<110 and g>120 and b<110: return 'G'
+    if r<120 and g>150 and b>150: return 'C'
+    if r<110 and g<120 and b>150: return 'B'
+    if r>150 and g<150 and b>150: return 'P'
+    if r>110 and g<110 and b>110: return 'M'
+    if r>100 and 60<g<120 and b<80: return 'b'
+    if r>190 and g>190 and b>190: return 'w'
+    return 'g'
+seen = set()
+for y in range(H):
+    line = ''
+    for x in range(W):
+        r, g, b = img.getpixel((x, y))
+        lum = (r+g+b)/3
+        ch = BR[min(9, int(lum/255*10))]
+        l = letter((r,g,b))
+        if l != 'g': ch = l
+        seen.add((l, (r,g,b)))
+        line += ch
+    print(line)
+for l, c in sorted(seen):
+    print(f'{l} #{c[0]:02x}{c[1]:02x}{c[2]:02x}')
+```
+
+Regras de leitura da grade (base do desenho): células `K`/`b` escuras = contorno
+e áreas escuras; `w` = rosto/peças claras; uma mancha contígua de `R`/`O`/`P`
+= detalhe colorido (crista, língua, enfeite). Sempre que possível, rodar com
+diferentes recortes (rosto, topo, corpo) para captar o todo antes de codificar.
 
 ### `src/js/ui.js` (DOM/UI)
 - `refs`: referências a todos os elementos do HTML.
@@ -252,16 +507,53 @@ BombParty/
   `resetCustomKeys` restaura os originais.
 - **Seletor de chapéus:** `openHatPicker` — popup com caixinhas em grid com
   preview em canvas; ao escolher, salva no `deviceId` e no player da sala.
+  **A localização das regiões do personagem** (constante `CHARACTER_REGIONS` +
+  função `drawCharacterRegionsDiagram`) fica **somente no código**, como
+  referência para desenvolvimento de cosméticos (não é mais exibida no jogo).
+  O diagrama mostra as medidas de cada parte (corpo inteiro, topo da cabeça,
+  rosto, olhos, boca, corpo debaixo e pés), com origem no canto superior
+  esquerdo do corpo; os cosméticos são desenhados a partir de
+  `top = player.y - player.h` (topo do corpo) e `player.x` (centro).
+- `showScreen(name)` também **fecha o seletor de chapéus** (além da aba de
+  configurações) ao sair da tela de lobby — assim, se o jogo iniciar enquanto
+  o jogador estiver na tela de cosméticos, ela é fechada automaticamente.
 - **Modal de confirmação:** `showConfirm` / `hideConfirm` — usado para "Sair da
   sala?" e "Voltar para o lobby?".
+- **Modal de atribuição de controle (`padModal`):** `showPadConnect(padIndex)` /
+  `hidePadConnect()` / `getPadConnectIndex()`. Lista os jogadores locais desta
+  tela (atribuir o pad a um deles via `assignPadToPlayer`) ou cria um novo
+  jogador (`padCreateBtn` → nome → `handlePadCreate`, que chama
+  `rooms.addLocalPlayer` e atribui o pad ao novo player).
+- **Modal de convite (`inviteModal`):** `openInviteModal()` / `closeInviteModal()`
+  — monta o link `?room=CÓDIGO` e copia para o clipboard.
+- **Configuração por jogador:** `getSettingsPlayer()` resolve quem está sendo
+  configurado (`configTargetId`, setado pelo dono do pad que abriu a aba). No
+  modo Local a aba mostra "Configurações de {nome}" (nome na cor do jogador,
+  com "…" se muito longo) e só cor/chapéu (e demais
+  preferências) valem para esse jogador.
+- **Foco do menu por jogador:** `uiFocusMap` guarda o índice atual de foco de
+  **cada jogador local + teclado**; `renderUiFocuses()` aplica a classe
+  `.ui-focus` e a cor (`--focus-color`) de cada elemento (removendo destaques
+  antigos em toda a página), então dois controles navegam simultaneamente cada
+  um com sua cor (fallback `#2ecc40`).
 - `showScreen` / `showNotice` / `showLobbyAlert`: troca de telas e avisos.
 - `renderLobby()`: lista de jogadores, **seleção de controle por jogador**
-  (Teclado/Controle 1–4; editável pelo próprio jogador ou pelo HOST), status de
-  gamepads conectados, modo da sala e `renderSettings()`.
-- `renderSettings()`: sincroniza a aba de configurações com o `localStorage`.
-- `showResultMessage()`: **personaliza por jogador** — se `result.winnerId ===
-  meu id` mostra vitória com coroa 👑 (tema dourado + confete ancorado + som de
-  vitória); senão mostra a tela de explosão.
+  (Teclado/Controle 1–4; editável pelo próprio jogador local ou pelo HOST —
+  `canAssign` inclui os jogadores desta tela; impede atribuir o mesmo gamepad a
+  dois jogadores e só permite um jogador no teclado — mesma tela = mesmo
+  teclado), status de gamepads conectados (lembrete de conectar um controle
+  para adicionar jogadores), rótulo **"Você"** para os jogadores locais desta
+  tela, badge de pontos (quando > 0), botão **"Convidar"** sempre visível e
+  `renderSettings()`.
+- `renderSettings()`: sincroniza a aba de configurações com o `localStorage` e
+  preenche o **título da aba** (h3 ao lado do botão de fechar) com
+  "Configurações de {nome}" — nome na cor do jogador, com "…" se muito longo —
+  refletindo **quem abriu** as configurações (`configTargetId`).
+- `showResultMessage()`: mostra **somente o placar** com o título
+  **"👑 {NOME} VENCEU! 👑"** — nome do vencedor na cor dele — sem classes
+  `victory`/`explode`, sem confete e sem
+  som de vitória; **`renderScoreboard(result.scoreboard)`** monta o placar
+  (1º com coroa 👑, 2º, 3º… nomes **na cor de cada jogador** e "X pts").
 - `formatControls()`: legenda de controles (gamepad ou teclado, com atalhos
   efetivos) no HUD do jogo.
 - `updateHud()`: **no-op** — os painéis "Partida" e "Você" foram removidos; o
@@ -272,8 +564,14 @@ BombParty/
   `musics/game`); troca automática entre telas. Volume respeita a config
   `getMusicVolume` (padrão 70).
 - Efeitos: `playClick` (botões, via WebAudio), `playPop`, e `playSound(nome)`
-  que toca um mp3 aleatório do grupo (`start-countdown`, `victory`, `kill`,
-  `jump`, `leaderboard`). Volume respeita `getSfxVolume` (padrão 90).
+  (agora **async**) que toca um mp3 aleatório do grupo. Grupos definidos em
+  `SOUND_GROUPS`: `start-countdown` → `sounds/countdown/countdown.mp3`,
+  `start-menu` → `sounds/countdown/start-menu.mp3`, `victory`, `kill` e
+  `leaderboard`. Volume respeita `getSfxVolume` (padrão 90).
+- **Sons dinâmicos por pasta** (`FOLDER_GROUPS`): `jump` lista os arquivos de
+  `sounds/jump/` via `listFolderFiles` (fetch do diretório + cache) e sorteia um
+  aleatório; se o servidor não permitir listar, usa `jump1.mp3` como fallback.
+  O caminho final é tocado por `playFile`.
 - `setMusicVolume`/`setSfxVolume`: aplicam o volume em tempo real nos áudios
   ativos (usado pelos sliders da aba de configurações).
 - `unlockAudio()`: inicializa o AudioContext no primeiro clique do usuário.
@@ -307,9 +605,10 @@ BombParty/
 
 | Chave                        | Conteúdo                                          |
 |------------------------------|---------------------------------------------------|
-| `bombPartyRoomsV1`           | Array de salas com jogadores (cada player tem `deviceId` e `hat`; a sala tem `mode`) |
+| `bombPartyRoomsV1`           | Array de salas com jogadores (cada player tem `deviceId` e `hat`; a sala tem `mode`; jogadores locais têm `local: true`) |
 | `bombPartyRoom`              | (sessionStorage) código da minha sala              |
 | `bombPartyPlayerId`          | (sessionStorage) meu playerId                      |
+| `bombPartyLocalPlayers`      | (sessionStorage) array com os playerIds controlados por esta aba (modo Local) |
 | `bombPartyInput_<id>`        | Último input publicado por um jogador              |
 | `bombPartyGame_<código>`     | Estado atual da partida (publicado pelo host; inclui `roundResult` ao fim) |
 | `bombPartyAutoPass_<id>`     | "1"/"0" — passar bomba automaticamente             |
@@ -340,14 +639,25 @@ BombParty/
 - **Limite de FPS / resolução:** são por player e leem do `localStorage`; o
   limite só pula frames de desenho (a física continua em tempo real). A
   resolução só muda o backing store do canvas (espaço lógico sempre 1080×540).
-- **Modo local:** `room.mode === 'local'` oculta o overlay de FPS/ping. O modo
-  é definido na criação da sala e não muda depois.
+- **Placar de pontos:** `awardRoundPoints` roda no `finalizeRound` (host) e dá
+  pontos distintos por posição (1º vencedor). `player.score` persiste na sala e
+  entra no `roomSignature` (mudanças de pontos sincronizam entre abas).
+- **Aviso de desconexão em jogo:** quando um jogador sai ou cai (aba fechada)
+  durante a partida, os demais veem um alerta "X saiu" dentro do canvas
+  (`#gameAlerts`), tanto via evento `storage` quanto via `cleanupStalePlayers`.
 - **Atalhos customizados:** `getEffectiveControls` sempre resolve os efetivos
   (custom sobre padrão). Novos atalhos devem seguir o mesmo formato de chave.
 - **Chapéu:** é salvo por `deviceId` (persistente) e também gravado no player da
   sala para todos os tabs verem. `roomSignature` inclui `hat` e `mode`.
 - **Gamepad:** a atribuição é por playerId e armazenada por aba; o input lê o
-  gamepad do player atribuído e mescla com o teclado.
+  gamepad do player atribuído e mescla com o teclado. **Menus:** `getUiPad` só
+  devolve um gamepad atribuído a um player **desta aba** (`localPlayerIds`) —
+  não usar `connectedGamepads()[0]`, senão o controle age em todas as abas.
+- **Jogadores locais (`localPlayerIds`):** cada aba controla vários players
+  (host no teclado + jogadores via pads). Sempre sincronizar via
+  `saveLocalPlayers()` ao criar/entrar/adicionar/sair; `heartbeat` e `leaveRoom`
+  tratam **todos** os locais. A aba de configurações edita o `configTargetId`
+  (dono do pad que abriu).
 - **Confirmações:** qualquer saída (sala/lobby) deve passar por `showConfirm`
   para manter o padrão da UI.
 
@@ -356,7 +666,6 @@ BombParty/
 - Editor de mapas com importador/exportador (na tela inicial, não no lobby).
 - Variedade de mapas diferentes escolhidos aleatoriamente a cada partida.
 - Modo de jogo "CORRA!" (um player é um monstro que persegue os demais).
-- Placar de pontuação com pódio (coroa no 1º lugar, ordem conforme nº de players).
 - Suporte a dispositivos móveis com botões visuais personalizáveis (estilos de
   setas/analógico, posições editáveis, reset).
 - Timer de 7 segundos ao iniciar o jogo (estilo Gartic Phone).

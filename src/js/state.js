@@ -4,6 +4,7 @@ export const state = {
   rooms: [],
   myRoomCode: sessionStorage.getItem('bombPartyRoom'),
   myPlayerId: sessionStorage.getItem('bombPartyPlayerId'),
+  localPlayerIds: loadLocalPlayers(),
   currentRoom: null,
   gameState: null,
   keysPressed: {},
@@ -15,8 +16,23 @@ export const state = {
   endShown: false,
   particles: [],
   bombImage: null,
-  bombImageLoaded: false
+  bombImageLoaded: false,
+  uiPadPlayerId: null,
+  configTargetId: sessionStorage.getItem('bombPartyPlayerId')
 };
+
+function loadLocalPlayers() {
+  try {
+    const raw = sessionStorage.getItem('bombPartyLocalPlayers');
+    if (raw) return JSON.parse(raw);
+  } catch (error) {}
+  return [];
+}
+
+export function saveLocalPlayers(ids) {
+  state.localPlayerIds = ids;
+  sessionStorage.setItem('bombPartyLocalPlayers', JSON.stringify(ids));
+}
 
 export function getMyPlayer() {
   if (!state.currentRoom) return null;

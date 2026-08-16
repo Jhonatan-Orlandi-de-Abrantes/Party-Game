@@ -29,7 +29,7 @@ function readGamepad(index) {
       right: axis(0) > AXIS_DEADZONE || btn(15),
       jump: btn(0) || btn(12),
       pass: btn(2) || btn(3),
-      dash: btn(7) || btn(1)
+      dash: btn(7) || btn(1) || btn(6)
     };
   } catch (error) {
     return null;
@@ -51,18 +51,20 @@ export function gamepadName(pad, index) {
   return name;
 }
 
-export function publishMyInput() {
-  if (!state.myRoomCode || !state.myPlayerId) return;
-  const ctrl = getEffectiveControls(state.myPlayerId);
+const lastPublishedByPlayer = new Map();
+
+export function publishPlayerInput(playerId, includeKeyboard) {
+  if (!state.myRoomCode || !playerId) return;
+  const ctrl = getEffectiveControls(playerId);
   if (!ctrl) return;
   const keys = {
-    left: !!state.keysPressed[ctrl.left.toLowerCase()],
-    right: !!state.keysPressed[ctrl.right.toLowerCase()],
-    jump: !!state.keysPressed[ctrl.jump.toLowerCase()],
-    pass: !!state.keysPressed[ctrl.pass.toLowerCase()],
-    dash: !!state.keysPressed[ctrl.dash.toLowerCase()]
+    left: includeKeyboard && !!state.keysPressed[ctrl.left.toLowerCase()],
+    right: includeKeyboard && !!state.keysPressed[ctrl.right.toLowerCase()],
+    jump: includeKeyboard && !!state.keysPressed[ctrl.jump.toLowerCase()],
+    pass: includeKeyboard && !!state.keysPressed[ctrl.pass.toLowerCase()],
+    dash: includeKeyboard && !!state.keysPressed[ctrl.dash.toLowerCase()]
   };
-  const gp = readGamepad(getGamepadAssignment(state.myPlayerId));
+  const gp = readGamepad(getGamepadAssignment(playerId));
   if (gp) {
     keys.left = keys.left || gp.left;
     keys.right = keys.right || gp.right;
@@ -70,10 +72,21 @@ export function publishMyInput() {
     keys.pass = keys.pass || gp.pass;
     keys.dash = keys.dash || gp.dash;
   }
-  const data = JSON.stringify({ roomCode: state.myRoomCode, playerId: state.myPlayerId, keys, t: Date.now() });
-  if (data === state.lastPublishedInput) return;
-  state.lastPublishedInput = data;
-  writePlayerInput(state.myPlayerId, data);
+  const data = JSON.stringify({ roomCode: state.myRoomCode, playerId, keys, t: Date.now() });
+  if (lastPublishedByPlayer.get(playerId) === data) return;
+  lastPublishedByPlayer.set(playerId, data);
+  writePlayerInput(playerId, data);
+}
+
+export function publishMyInput() {
+  publishPlayerInput(state.myPlayerId, true);
+}
+
+export function publishLocalInputs() {
+  const ids = state.localPlayerIds && state.localPlayerIds.length
+    ? state.localPlayerIds
+    : (state.myPlayerId ? [state.myPlayerId] : []);
+  ids.forEach(id => publishPlayerInput(id, id === state.myPlayerId));
 }
 
 export function getPlayerKeys(player) {

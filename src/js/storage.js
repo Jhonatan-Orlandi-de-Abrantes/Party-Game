@@ -1,4 +1,4 @@
-import { state } from './state.js';
+import { state, saveLocalPlayers } from './state.js';
 import {
   STORAGE_KEY,
   INPUT_PREFIX,
@@ -34,6 +34,8 @@ export function syncRooms() {
   if (!state.currentRoom) {
     state.myRoomCode = null;
     state.myPlayerId = null;
+    state.localPlayerIds = [];
+    saveLocalPlayers([]);
     sessionStorage.removeItem('bombPartyRoom');
     sessionStorage.removeItem('bombPartyPlayerId');
   }

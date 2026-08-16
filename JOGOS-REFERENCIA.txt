@@ -13,4 +13,4 @@ Make it Meme:
  - Forma de pontuação e placar do jogo.
 
 Sitck Fight:
- - 
+ - Mapas e modelo de mapas personalizados.

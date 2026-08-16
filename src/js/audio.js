@@ -4,13 +4,42 @@ const MENU_TRACKS = ['menu1', 'menu2', 'menu3', 'menu4', 'menu5'].map(name => `m
 const GAME_TRACKS = ['gm1', 'gm2', 'gm3', 'gm4', 'gm5', 'gm6', 'gm7', 'gm8', 'gm9', 'gm10', 'gm11'].map(name => `musics/game/${name}.mp3`);
 
 const SOUND_GROUPS = {
-  'start-countdown': ['start-countdown1', 'start-countdown2'].map(name => `sounds/start-countdown/${name}.mp3`),
-  'start-menu': ['start-menu'].map(name => `sounds/start-countdown/${name}.mp3`),
+  'start-countdown': ['countdown'].map(name => `sounds/countdown/${name}.mp3`),
+  'start-menu': ['start-menu'].map(name => `sounds/countdown/${name}.mp3`),
   victory: ['victory1', 'victory2', 'victory3', 'victory4', 'victory5', 'victory6', 'victory7', 'victory8', 'victory9', 'victory10'].map(name => `sounds/victory/${name}.mp3`),
   kill: ['kill1', 'kill2', 'kill3', 'kill4', 'kill5', 'kill6', 'kill7'].map(name => `sounds/kill/${name}.mp3`),
-  jump: ['jump1', 'jump2', 'jump3'].map(name => `sounds/jump/${name}.mp3`),
   leaderboard: ['leaderboard1', 'leaderboard2', 'leaderboard3'].map(name => `sounds/leaderboard/${name}.mp3`)
 };
+
+const FOLDER_GROUPS = {
+  jump: 'sounds/jump/'
+};
+
+const folderCache = {};
+
+async function listFolderFiles(folder) {
+  if (folderCache[folder]) return folderCache[folder];
+  try {
+    const response = await fetch(folder, { cache: 'no-store' });
+    if (!response.ok) throw new Error('no listing');
+    const html = await response.text();
+    const files = Array.from(html.matchAll(/href="([^"]+\.(?:mp3|wav|ogg))(?:\?[^"]*)?"/gi))
+      .map(match => match[1])
+      .filter(file => !file.startsWith('../') && !file.startsWith('/'));
+    folderCache[folder] = files.length ? files : null;
+  } catch (error) {
+    folderCache[folder] = null;
+  }
+  if (!folderCache[folder]) folderCache[folder] = ['jump1.mp3'];
+  return folderCache[folder];
+}
+
+function playFile(src) {
+  const audio = new Audio(src);
+  audio.volume = getSfxVolume() / 100;
+  const promise = audio.play();
+  if (promise && promise.catch) promise.catch(() => {});
+}
 
 let menuAudio = null;
 let gameAudio = null;
@@ -115,11 +144,14 @@ export function playPop() {
   blip(0.1, 340, 'triangle', 0.12);
 }
 
-export function playSound(name) {
+export async function playSound(name) {
+  const folder = FOLDER_GROUPS[name];
+  if (folder) {
+    const files = await listFolderFiles(folder);
+    playFile(folder + randomFrom(files));
+    return;
+  }
   const list = SOUND_GROUPS[name];
   if (!list) return;
-  const audio = new Audio(randomTrack(list));
-  audio.volume = getSfxVolume() / 100;
-  const promise = audio.play();
-  if (promise && promise.catch) promise.catch(() => {});
+  playFile(randomTrack(list));
 }

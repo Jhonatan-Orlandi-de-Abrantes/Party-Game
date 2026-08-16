@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bomb Party</title>
+  <title>Party Game</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Press+Start+2P&display=swap" rel="stylesheet" />
@@ -16,8 +16,8 @@
       <h1 class="game-title">
         <span class="title-word">
           <span class="title-bomb"><img src="src/Images/BombGame/bomb.png" alt="" aria-hidden="true" /></span>
-          Bomb
-        </span><span class="title-word">Party</span>
+          Party
+        </span><span class="title-word">Game</span>
       </h1>
       <div class="game-mode" id="gameMode">Bomb Clássico</div>
     </header>
@@ -36,18 +36,11 @@
 
       <div class="row">
         <div class="col">
-          <label for="maxPlayersInput">Máximo de jogadores</label>
+          <label for="maxPlayersInput">Jogadores</label>
           <select id="maxPlayersInput">
             <option value="2">2 jogadores</option>
             <option value="3">3 jogadores</option>
             <option value="4">4 jogadores</option>
-          </select>
-        </div>
-        <div class="col">
-          <label for="gameModeSelect">Modo da partida</label>
-          <select id="gameModeSelect">
-            <option value="online">Online (uma tela para cada player)</option>
-            <option value="local">Multijogador local (uma tela só)</option>
           </select>
         </div>
       </div>
@@ -67,11 +60,6 @@
           <strong>Código da sala</strong>
           <div id="roomCodeDisplay" class="room-code-display">----</div>
         </div>
-        <div>
-          <strong>Status da sala</strong>
-          <div id="roomStatusDisplay" class="room-status-display">Aguardando jogadores...</div>
-          <div class="status-line" id="roomModeDisplay">Online</div>
-        </div>
         <button id="settingsGearBtn" class="gear-btn" title="Configurações">⚙</button>
       </div>
 
@@ -81,13 +69,11 @@
           <ul id="playerList" class="player-list"></ul>
         </div>
         <div class="col">
-          <strong>Controle do jogo</strong>
-          <div class="status-line">Máximo de jogadores: <span id="maxPlayersDisplay"></span></div>
-          <div class="status-line">Você é: <span id="yourRoleDisplay"></span></div>
-          <div class="status-line" id="hostHint">Apenas o host pode iniciar.</div>
+          <div class="status-line player-count" id="playersStatusLine">Jogadores: <span id="maxPlayersDisplay"></span></div>
           <div class="status-line" id="gamepadStatus">Nenhum controle conectado.</div>
           <div class="row" style="margin-top:14px; gap:12px;">
             <button id="startGameBtn">Iniciar partida</button>
+            <button id="inviteBtn" class="invite">Convidar</button>
             <button id="leaveRoomBtn" class="secondary">Sair</button>
           </div>
           <div class="notice" id="lobbyNotice"></div>
@@ -97,12 +83,12 @@
 
       <div class="controls">
         <strong>Como jogar:</strong>
-        <p>Anda, pula e encosta em outro jogador para passar a bomba. Após 15 segundos com a bomba, ela explode em quem a segura. Use o dash a cada 20 segundos para escapar. Cada jogador pode escolher seu controle (ou teclado) na lista de jogadores acima.</p>
+        <p>Encoste em outro jogador para passar a bomba. Após 15 segundos ela explode em quem a segura. Use o dash para escapar. Cada jogador pode escolher seu controle (ou teclado) na lista de jogadores acima.</p>
       </div>
 
       <div id="settingsPanel" class="settings-panel">
         <div class="settings-head">
-          <h3>Configurações</h3>
+          <h3 id="settingsTitle" class="settings-title-head">Configurações</h3>
           <button id="settingsCloseBtn" class="secondary" title="Fechar">✕</button>
         </div>
         <div class="settings-scroll">
@@ -192,10 +178,14 @@
     <section id="screen-game" class="card screen hidden">
       <div id="game-area">
         <canvas id="gameCanvas" width="1080" height="540"></canvas>
-        <div id="toastBox" class="toast-box hidden"></div>
+        <div id="gameAlerts" class="game-alerts"></div>
         <div id="messageBox" class="message-box hidden">
-          <h2 id="messageTitle" class="message-title">Bomb Party</h2>
+          <h2 id="messageTitle" class="message-title">Party Game</h2>
           <p id="messageText"></p>
+          <div id="scoreboard" class="scoreboard hidden">
+            <h3>Placar</h3>
+            <ul id="scoreboardList" class="scoreboard-list"></ul>
+          </div>
           <div class="link-row">
             <button id="returnLobbyBtn">Voltar para lobby</button>
           </div>
@@ -205,7 +195,7 @@
         <div class="hud-panel">
           <strong>Controles</strong>
           <div class="status-line" id="controlsInfo">Mover: A/D, Pular: W, Passar: Q, Dash: Shift</div>
-          <div class="status-line" id="gamepadInfo">Gamepad: Mover: Analógico, Pular: A, Passar: X, Dash: RT</div>
+          <div class="status-line" id="gamepadInfo">Gamepad: Mover: Analógico, Pular: A, Passar: X, Dash: RT/LT</div>
         </div>
       </div>
       <button id="gameQuitBtn" class="game-quit-btn" title="Sair do jogo">✕</button>
@@ -225,6 +215,7 @@
   <div id="countdownOverlay" class="countdown-overlay hidden">
     <div id="countdownNumber" class="countdown-number">5</div>
     <div class="countdown-label">Prepare-se!</div>
+    <button id="countdownCancelBtn" class="countdown-cancel-btn" title="Cancelar início">✕</button>
   </div>
 
   <div id="confirmModal" class="modal hidden">
@@ -234,6 +225,42 @@
       <div class="link-row">
         <button id="confirmOkBtn">Confirmar</button>
         <button id="confirmCancelBtn" class="secondary">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="inviteModal" class="modal hidden">
+    <div class="modal-box">
+      <h3>Convidar amigos</h3>
+      <p>Compartilhe o link para seus amigos entrarem na sala:</p>
+      <div class="invite-line">
+        <input id="inviteLinkInput" readonly />
+      </div>
+      <div class="link-row">
+        <button id="inviteCopyBtn">Copiar link</button>
+      </div>
+      <div class="link-row">
+        <button id="inviteCloseBtn" class="secondary">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="padModal" class="modal hidden">
+    <div class="modal-box">
+      <h3>Controle detectado</h3>
+      <p id="padModalText">Atribua o controle a um jogador desta tela ou crie um novo.</p>
+      <strong style="display:block; margin-bottom:8px;">Jogadores nesta tela</strong>
+      <ul id="padAssignList" class="pad-assign-list"></ul>
+      <div class="link-row" style="margin-top:14px;">
+        <button id="padCreateBtn" class="secondary">Criar novo jogador</button>
+      </div>
+      <div id="padNewNameRow" class="pad-new-name hidden">
+        <input id="padNewNameInput" maxlength="16" placeholder="Nome do novo jogador" autocomplete="off" />
+        <button id="padNewNameConfirmBtn">Criar</button>
+      </div>
+      <div class="notice" id="padModalNotice"></div>
+      <div class="link-row">
+        <button id="padModalCancelBtn" class="secondary">Cancelar</button>
       </div>
     </div>
   </div>

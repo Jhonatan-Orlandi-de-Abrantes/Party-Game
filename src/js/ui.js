@@ -1,5 +1,6 @@
-import { ROOM_STATUS, GAME_MODE_NAME } from './constants.js';
-import { state, getMyPlayer, isHost } from './state.js';
+import { GAME_MODE_NAME, PLAYER_WIDTH, PLAYER_HEIGHT } from './constants.js';
+import { state, getMyPlayer, isHost, saveLocalPlayers } from './state.js';
+import * as rooms from './rooms.js';
 import {
   getAutoPass,
   getGamepadAssignment,
@@ -34,7 +35,6 @@ export const refs = {
   nicknameInput: $('nicknameInput'),
   roomCodeInput: $('roomCodeInput'),
   maxPlayersInput: $('maxPlayersInput'),
-  gameModeSelect: $('gameModeSelect'),
   createRoomBtn: $('createRoomBtn'),
   joinRoomBtn: $('joinRoomBtn'),
   welcomeNotice: $('welcomeNotice'),
@@ -42,23 +42,20 @@ export const refs = {
   screenLobby: $('screen-lobby'),
   screenGame: $('screen-game'),
   roomCodeDisplay: $('roomCodeDisplay'),
-  roomStatusDisplay: $('roomStatusDisplay'),
-  roomModeDisplay: $('roomModeDisplay'),
   maxPlayersDisplay: $('maxPlayersDisplay'),
-  yourRoleDisplay: $('yourRoleDisplay'),
   playerList: $('playerList'),
   startGameBtn: $('startGameBtn'),
   leaveRoomBtn: $('leaveRoomBtn'),
   lobbyNotice: $('lobbyNotice'),
-  hostHint: $('hostHint'),
   lobbyAlerts: $('lobbyAlerts'),
   gamepadStatus: $('gamepadStatus'),
   controlsInfo: $('controlsInfo'),
   messageBox: $('messageBox'),
   messageTitle: $('messageTitle'),
   messageText: $('messageText'),
+  scoreboard: $('scoreboard'),
+  scoreboardList: $('scoreboardList'),
   returnLobbyBtn: $('returnLobbyBtn'),
-  toastBox: $('toastBox'),
   gameModeEl: $('gameMode'),
   settingsGearBtn: $('settingsGearBtn'),
   settingsPanel: $('settingsPanel'),
@@ -90,16 +87,35 @@ export const refs = {
   gameQuitBtn: $('gameQuitBtn'),
   countdownOverlay: $('countdownOverlay'),
   countdownNumber: $('countdownNumber'),
-  gamepadInfo: $('gamepadInfo')
+  countdownCancelBtn: $('countdownCancelBtn'),
+  gamepadInfo: $('gamepadInfo'),
+  gameAlerts: $('gameAlerts'),
+  inviteBtn: $('inviteBtn'),
+  inviteModal: $('inviteModal'),
+  inviteLinkInput: $('inviteLinkInput'),
+  inviteCopyBtn: $('inviteCopyBtn'),
+  inviteCloseBtn: $('inviteCloseBtn'),
+  padModal: $('padModal'),
+  padModalText: $('padModalText'),
+  padAssignList: $('padAssignList'),
+  padCreateBtn: $('padCreateBtn'),
+  padNewNameRow: $('padNewNameRow'),
+  padNewNameInput: $('padNewNameInput'),
+  padNewNameConfirmBtn: $('padNewNameConfirmBtn'),
+  padModalCancelBtn: $('padModalCancelBtn'),
+  padModalNotice: $('padModalNotice'),
+  settingsTitle: $('settingsTitle'),
+  playersStatusLine: $('playersStatusLine')
 };
 
-let toastTimer = null;
 let confirmCallback = null;
 let rebindingAction = null;
 let countdownTimer = null;
 let countdownActive = false;
-let uiFocusIndex = -1;
+const uiFocusMap = new Map();
+let settingsOpenByController = false;
 let renderedPlayerIds = new Set();
+let padConnectIndex = -1;
 
 const FOCUS_SELECTOR = 'input:not([type="hidden"]), select, button, .hat-option';
 
@@ -107,13 +123,64 @@ export function initUi() {
   refs.gameModeEl.textContent = GAME_MODE_NAME;
 
   refs.settingsGearBtn.addEventListener('click', () => {
+    const wasOpen = refs.settingsPanel.classList.contains('open');
+    if (!wasOpen && state.uiPadPlayerId) state.configTargetId = state.uiPadPlayerId;
     toggleSettingsPanel();
+    if (!wasOpen) renderSettings();
+    if (wasOpen) settingsOpenByController = false;
     playClick();
   });
   refs.settingsCloseBtn.addEventListener('click', () => {
     closeSettingsPanel();
     playClick();
   });
+
+  if (refs.inviteBtn) {
+    refs.inviteBtn.addEventListener('click', () => {
+      openInviteModal();
+      playClick();
+    });
+  }
+  if (refs.inviteCopyBtn) {
+    refs.inviteCopyBtn.addEventListener('click', () => {
+      const link = refs.inviteLinkInput.value;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(link).then(() => {
+          refs.inviteCopyBtn.textContent = 'Copiado!';
+          setTimeout(() => { refs.inviteCopyBtn.textContent = 'Copiar link'; }, 1500);
+        });
+      } else {
+        refs.inviteLinkInput.select();
+        document.execCommand('copy');
+      }
+      playClick();
+    });
+    refs.inviteCloseBtn.addEventListener('click', () => {
+      closeInviteModal();
+      playClick();
+    });
+  }
+  if (refs.padCreateBtn) {
+    refs.padCreateBtn.addEventListener('click', () => {
+      refs.padNewNameRow.classList.remove('hidden');
+      refs.padNewNameInput.focus();
+      playClick();
+    });
+    refs.padNewNameConfirmBtn.addEventListener('click', () => {
+      handlePadCreate();
+      playClick();
+    });
+    refs.padNewNameInput.addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        handlePadCreate();
+      }
+    });
+    refs.padModalCancelBtn.addEventListener('click', () => {
+      hidePadConnect();
+      playClick();
+    });
+  }
 
   refs.hatBtn.addEventListener('click', () => {
     openHatPicker();
@@ -136,13 +203,15 @@ export function initUi() {
 
   refs.fpsLimitInput.addEventListener('input', () => {
     const value = Number(refs.fpsLimitInput.value);
-    if (state.myPlayerId) saveFpsLimit(state.myPlayerId, value);
+    const player = getSettingsPlayer();
+    if (player) saveFpsLimit(player.id, value);
     refs.fpsLimitValue.textContent = value === 0 ? 'Sem limite' : String(value);
   });
 
   refs.resolutionInput.addEventListener('input', () => {
     const value = Number(refs.resolutionInput.value);
-    if (state.myPlayerId) saveResolution(state.myPlayerId, value / 100);
+    const player = getSettingsPlayer();
+    if (player) saveResolution(player.id, value / 100);
     refs.resolutionValue.textContent = `${value}%`;
     window.dispatchEvent(new Event('bombparty:resolutionchange'));
   });
@@ -162,13 +231,15 @@ export function initUi() {
   });
 
   refs.resetKeysBtn.addEventListener('click', () => {
-    if (state.myPlayerId) resetCustomKeys(state.myPlayerId);
+    const player = getSettingsPlayer();
+    if (player) resetCustomKeys(player.id);
     renderLobby();
   });
 
   document.querySelectorAll('.key-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      if (!state.myPlayerId) return;
+      const player = getSettingsPlayer();
+      if (!player) return;
       rebindingAction = btn.dataset.action;
       btn.classList.add('recording');
       btn.querySelector('span').textContent = '...';
@@ -184,12 +255,18 @@ export function initUi() {
       cancelRebind();
       return;
     }
-    const custom = getCustomKeys(state.myPlayerId) || {};
+    const player = getSettingsPlayer();
+    if (!player) return;
+    const custom = getCustomKeys(player.id) || {};
     custom[rebindingAction] = event.key.toLowerCase();
-    saveCustomKeys(state.myPlayerId, custom);
+    saveCustomKeys(player.id, custom);
     cancelRebind();
     renderLobby();
   });
+
+  // As medidas de localização das partes do personagem (CHARACTER_REGIONS)
+  // ficam somente neste arquivo, como referência para desenvolvimento de
+  // cosméticos — não são mais exibidas no jogo.
 }
 
 export function toggleSettingsPanel() {
@@ -201,6 +278,8 @@ export function toggleSettingsPanel() {
 export function closeSettingsPanel() {
   refs.settingsPanel.classList.remove('open');
   refs.settingsGearBtn.classList.remove('open');
+  settingsOpenByController = false;
+  clearUiFocuses();
 }
 
 function cancelRebind() {
@@ -210,9 +289,143 @@ function cancelRebind() {
   });
 }
 
+const CHARACTER_REGIONS = [
+  { name: 'Corpo inteiro', y0: 0, y1: PLAYER_HEIGHT, x0: 0, x1: PLAYER_WIDTH, color: '#6b7280', note: '' },
+  { name: 'Topo da cabeça', y0: 0, y1: 8, x0: 12, x1: PLAYER_WIDTH - 12, color: '#ff9f1c', note: 'é onde os chapéus assentam (eles crescem acima de 0px)' },
+  { name: 'Rosto', y0: 8, y1: 34, x0: 0, x1: PLAYER_WIDTH, color: '#ffd23f', note: 'área dos olhos e da boca' },
+  { name: 'Olho esquerdo', y0: 11, y1: 25, x0: 6, x1: 18, color: '#3f8efc', note: 'centro x=12, y=18' },
+  { name: 'Olho direito', y0: 11, y1: 25, x0: 22, x1: 34, color: '#7b2ff7', note: 'centro x=28, y=18' },
+  { name: 'Boca', y0: 23, y1: 31, x0: 16, x1: 24, color: '#e91e63', note: 'centro x=20, y=27' },
+  { name: 'Corpo debaixo', y0: 34, y1: PLAYER_HEIGHT, x0: 0, x1: PLAYER_WIDTH, color: '#2f9e44', note: 'parte de baixo do corpo' },
+  { name: 'Pés', y0: 40, y1: 49, x0: 4, x1: 36, color: '#b08968', note: 'esquerdo x=4–15, direito x=25–36' }
+];
+
+function hexToRgba(hex, alpha) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+
+function roundedRect(ctx, x, y, w, h, r) {
+  const radius = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
+}
+
+function drawCharacterRegionsDiagram(canvas) {
+  const ctx = canvas.getContext('2d');
+  const S = 4;
+  const bw = PLAYER_WIDTH * S;
+  const bh = PLAYER_HEIGHT * S;
+  const bx = 30;
+  const by = 40;
+  const maxY = 49 * S;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.font = 'bold 10px "Trebuchet MS", Arial, sans-serif';
+  ctx.fillStyle = '#9aa3af';
+  for (let y = 20; y <= 40; y += 20) {
+    ctx.strokeStyle = '#e6e9ef';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(bx, by + y * S);
+    ctx.lineTo(bx + bw, by + y * S);
+    ctx.stroke();
+    ctx.textAlign = 'left';
+    ctx.fillText(`${y}px`, 12, by + y * S + 4);
+  }
+  for (let x = 20; x <= 40; x += 20) {
+    ctx.strokeStyle = '#e6e9ef';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(bx + x * S, by);
+    ctx.lineTo(bx + x * S, by + maxY);
+    ctx.stroke();
+    ctx.textAlign = 'center';
+    ctx.fillText(`${x}px`, bx + x * S, 12);
+  }
+  ctx.textAlign = 'left';
+  ctx.fillText('0px', 12, by + 4);
+  ctx.textAlign = 'center';
+  ctx.fillText('0px', bx, 12);
+
+  const cx = bx + (PLAYER_WIDTH / 2) * S;
+  ctx.strokeStyle = '#b6bdc9';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(cx, by - 6);
+  ctx.lineTo(cx, by + maxY + 4);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#7c8694';
+  ctx.fillText(`centro x=${PLAYER_WIDTH / 2}`, cx + 6, by + 10);
+
+  ctx.fillStyle = 'rgba(0,0,0,0.15)';
+  ctx.beginPath();
+  ctx.ellipse(bx + bw / 2, by + bh + 10, bw * 0.55, 12, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  roundedRect(ctx, bx, by, bw, bh, 12 * S);
+  ctx.fillStyle = '#ff6b6b';
+  ctx.fill();
+  ctx.strokeStyle = '#222';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  ctx.fillStyle = '#222';
+  roundedRect(ctx, bx + 4 * S, by + 40 * S, 11 * S, 9 * S, 4 * S);
+  ctx.fill();
+  roundedRect(ctx, bx + 25 * S, by + 40 * S, 11 * S, 9 * S, 4 * S);
+  ctx.fill();
+
+  CHARACTER_REGIONS.filter(region => region.name !== 'Corpo inteiro').forEach(region => {
+    ctx.fillStyle = hexToRgba(region.color, 0.28);
+    ctx.strokeStyle = region.color;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 3]);
+    roundedRect(ctx, bx + region.x0 * S, by + region.y0 * S, (region.x1 - region.x0) * S, (region.y1 - region.y0) * S, 3);
+    ctx.fill();
+    ctx.stroke();
+  });
+  ctx.setLineDash([]);
+
+  ctx.fillStyle = '#fff';
+  ctx.strokeStyle = '#222';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(bx + 12 * S, by + 18 * S, 6 * S, 7 * S, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(bx + 28 * S, by + 18 * S, 6 * S, 7 * S, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#222';
+  ctx.beginPath();
+  ctx.arc(bx + 12 * S, by + 19 * S, 2.7 * S, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(bx + 28 * S, by + 19 * S, 2.7 * S, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#222';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(bx + 20 * S, by + 27 * S, 4 * S, 0.15 * Math.PI, 0.85 * Math.PI);
+  ctx.stroke();
+}
+
 export function openHatPicker() {
-  const me = getMyPlayer();
+  const me = getSettingsPlayer();
   if (!me) return;
+  clearUiFocuses();
   refs.hatGrid.innerHTML = '';
   HATS.forEach(hat => {
     const box = document.createElement('button');
@@ -228,7 +441,7 @@ export function openHatPicker() {
     box.appendChild(canvas);
     box.appendChild(label);
     box.addEventListener('click', () => {
-      const currentMe = getMyPlayer();
+      const currentMe = getSettingsPlayer();
       if (currentMe) currentMe.hat = hat.id;
       saveHat(getDeviceId(), hat.id);
       saveRooms();
@@ -252,6 +465,7 @@ export function startCountdown(durationSeconds, onDone) {
   stopCountdown();
   countdownActive = true;
   refs.countdownOverlay.classList.remove('hidden');
+  refs.countdownCancelBtn.classList.toggle('hidden', !isHost());
   let remaining = durationSeconds;
   const tick = () => {
     refs.countdownNumber.textContent = String(remaining);
@@ -279,47 +493,122 @@ export function stopCountdown() {
     countdownTimer = null;
   }
   refs.countdownOverlay.classList.add('hidden');
+  refs.countdownCancelBtn.classList.add('hidden');
 }
 
 export function getFocusables() {
+  if (countdownActive) {
+    const cancel = refs.countdownCancelBtn;
+    if (cancel.classList.contains('hidden') || cancel.disabled) return [];
+    return [cancel];
+  }
   const modal = document.querySelector('.modal:not(.hidden)');
   const popup = document.querySelector('.hat-popup:not(.hidden)');
-  const settings = document.querySelector('.settings-panel.open');
   const screen = document.querySelector('.screen:not(.hidden)');
-  const scope = modal || popup || settings || screen;
+  let scope = screen;
+  let skipPanel = true;
+  if (modal) {
+    scope = modal;
+  } else if (popup) {
+    scope = popup;
+  } else if (refs.settingsPanel.classList.contains('open') && settingsOpenByController) {
+    scope = refs.settingsPanel;
+    skipPanel = false;
+  }
   if (!scope) return [];
-  return Array.from(scope.querySelectorAll(FOCUS_SELECTOR)).filter(el => !el.disabled && el.offsetParent !== null);
+  return Array.from(scope.querySelectorAll(FOCUS_SELECTOR)).filter(el => {
+    if (el.disabled || el.offsetParent === null) return false;
+    if (skipPanel && refs.settingsPanel.contains(el)) return false;
+    return true;
+  });
 }
 
-function setUiFocusIndex(index) {
+function getUiActivePlayer(pid) {
+  const room = state.currentRoom;
+  if (!room) return null;
+  const id = pid || state.uiPadPlayerId || state.myPlayerId;
+  return room.players.find(player => player.id === id) || null;
+}
+
+function focusKey(pid) {
+  return pid || 'kb';
+}
+
+function getUiFocusIndex(pid) {
+  return uiFocusMap.get(focusKey(pid)) ?? -1;
+}
+
+function clearUiFocuses() {
+  document.querySelectorAll('.ui-focus').forEach(el => {
+    el.classList.remove('ui-focus');
+    el.style.removeProperty('--focus-color');
+  });
+  uiFocusMap.clear();
+}
+
+function renderUiFocuses() {
   const list = getFocusables();
+  const focused = new Set();
+  uiFocusMap.forEach((index, key) => {
+    if (index < 0 || index >= list.length) return;
+    const el = list[index];
+    if (el) focused.add(el);
+  });
+  [...document.querySelectorAll('.ui-focus')].forEach(el => {
+    if (!focused.has(el)) {
+      el.classList.remove('ui-focus');
+      el.style.removeProperty('--focus-color');
+    }
+  });
+  list.forEach(el => {
+    if (focused.has(el)) {
+      el.classList.add('ui-focus');
+    } else {
+      el.style.removeProperty('--focus-color');
+    }
+  });
+  uiFocusMap.forEach((index, key) => {
+    const el = index >= 0 && index < list.length ? list[index] : null;
+    if (!el || !focused.has(el)) return;
+    const active = getUiActivePlayer(key === 'kb' ? null : key);
+    if (active) el.style.setProperty('--focus-color', active.color);
+  });
+}
+
+function setUiFocusIndex(index, pid) {
+  const list = getFocusables();
+  const key = focusKey(pid);
   if (list.length === 0) {
-    uiFocusIndex = -1;
+    uiFocusMap.set(key, -1);
+    renderUiFocuses();
     return;
   }
-  uiFocusIndex = ((index % list.length) + list.length) % list.length;
-  list.forEach(el => el.classList.remove('ui-focus'));
-  const target = list[uiFocusIndex];
-  target.classList.add('ui-focus');
-  if (typeof target.scrollIntoView === 'function') target.scrollIntoView({ block: 'nearest' });
+  uiFocusMap.set(key, ((index % list.length) + list.length) % list.length);
+  renderUiFocuses();
+  const target = list[uiFocusMap.get(key)];
+  if (target && typeof target.scrollIntoView === 'function') target.scrollIntoView({ block: 'nearest' });
 }
 
-export function moveUiFocus(dx, dy) {
+export function moveUiFocus(dx, dy, pid) {
   const list = getFocusables();
   if (list.length === 0) return;
-  if (uiFocusIndex < 0) {
-    setUiFocusIndex(0);
+  let index = getUiFocusIndex(pid);
+  if (index < 0) {
+    setUiFocusIndex(0, pid);
     return;
   }
-  const target = list[uiFocusIndex];
-  if (target.tagName === 'SELECT' && dx !== 0) {
-    const next = target.selectedIndex + dx;
-    if (next >= 0 && next < target.options.length) {
-      target.selectedIndex = next;
-      target.dispatchEvent(new Event('change', { bubbles: true }));
-    }
+  const target = list[index];
+
+  if (target.classList.contains('hat-option')) {
+    moveHatGridFocus(list, dx, dy, pid);
     return;
   }
+  if (refs.hatCloseBtn && target === refs.hatCloseBtn && dy < 0) {
+    const options = Array.from(refs.hatGrid.querySelectorAll('.hat-option'));
+    if (options.length > 0) setUiFocusIndex(options.length - 1, pid);
+    return;
+  }
+
   if (target.type === 'range' && dx !== 0) {
     const step = Number(target.step) || 1;
     const min = Number(target.min);
@@ -330,15 +619,86 @@ export function moveUiFocus(dx, dy) {
     return;
   }
   const dir = dy !== 0 ? dy : dx;
-  setUiFocusIndex(uiFocusIndex + dir);
+  setUiFocusIndex(index + dir, pid);
 }
 
-export function activateUiFocus() {
+function moveHatGridFocus(list, dx, dy, pid) {
+  const options = list.filter(el => el.classList.contains('hat-option'));
+  const current = options.indexOf(list[getUiFocusIndex(pid)]);
+  if (current < 0) {
+    setUiFocusIndex(getUiFocusIndex(pid) + (dy !== 0 ? dy : dx), pid);
+    return;
+  }
+  let cols = 1;
+  if (options.length > 1) {
+    const firstTop = options[0].getBoundingClientRect().top;
+    for (const opt of options) {
+      if (Math.abs(opt.getBoundingClientRect().top - firstTop) < 3) cols++;
+      else break;
+    }
+  }
+  const row = Math.floor(current / cols);
+  let next = current;
+  if (dy !== 0) {
+    if (dy > 0) {
+      if (row >= Math.floor((options.length - 1) / cols)) {
+        setUiFocusIndex(options.length, pid);
+        return;
+      }
+      next = Math.min(options.length - 1, current + cols);
+    } else {
+      next = current >= cols ? current - cols : current;
+    }
+  } else if (dx !== 0) {
+    const rowStart = row * cols;
+    const rowLast = Math.min(options.length - 1, rowStart + cols - 1);
+    if (dx > 0) next = current >= rowLast ? rowStart : current + 1;
+    else next = current <= rowStart ? rowLast : current - 1;
+  }
+  setUiFocusIndex(next, pid);
+}
+
+export function activateUiFocus(pid) {
   const list = getFocusables();
   if (list.length === 0) return;
-  const index = uiFocusIndex < 0 ? 0 : uiFocusIndex;
+  let index = getUiFocusIndex(pid);
+  if (index < 0) {
+    setUiFocusIndex(0, pid);
+    const msgShown = refs.messageBox && !refs.messageBox.classList.contains('hidden');
+    if (msgShown) {
+      const el = list[0];
+      if (el && (el.tagName === 'BUTTON' || el.type === 'color')) el.click();
+    }
+    return;
+  }
   const el = list[index];
   if (!el) return;
+  if (el === refs.settingsGearBtn) {
+    const id = pid || state.uiPadPlayerId;
+    const wasOpen = refs.settingsPanel.classList.contains('open');
+    el.click();
+    if (id) state.configTargetId = id;
+    renderSettings();
+    settingsOpenByController = !wasOpen;
+    uiFocusMap.set(focusKey(pid), -1);
+    renderUiFocuses();
+    return;
+  }
+  if (el.tagName === 'SELECT') {
+    if (typeof el.showPicker === 'function') {
+      try {
+        el.showPicker();
+        return;
+      } catch (err) {
+        // fallback abaixo (cicla a opção)
+      }
+    }
+    const next = (el.selectedIndex + 1) % el.options.length;
+    el.selectedIndex = next;
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    setUiFocusIndex(index, pid);
+    return;
+  }
   if (el.tagName === 'BUTTON' || el.type === 'color') {
     el.click();
   } else {
@@ -346,10 +706,20 @@ export function activateUiFocus() {
   }
 }
 
-export function uiBack() {
+export function uiBack(pid) {
   const modal = document.querySelector('.modal:not(.hidden)');
   if (modal) {
-    refs.confirmCancelBtn.click();
+    if (modal === refs.inviteModal) {
+      closeInviteModal();
+    } else if (modal === refs.padModal) {
+      hidePadConnect();
+    } else {
+      refs.confirmCancelBtn.click();
+    }
+    return;
+  }
+  if (refs.messageBox && !refs.messageBox.classList.contains('hidden')) {
+    if (refs.returnLobbyBtn) refs.returnLobbyBtn.click();
     return;
   }
   const popup = document.querySelector('.hat-popup:not(.hidden)');
@@ -364,10 +734,10 @@ export function uiBack() {
   }
   if (document.activeElement && document.activeElement.tagName === 'INPUT') {
     document.activeElement.blur();
-    setUiFocusIndex(0);
+    setUiFocusIndex(0, pid);
     return;
   }
-  setUiFocusIndex(0);
+  setUiFocusIndex(0, pid);
 }
 
 export function setStartButtonPressed(pressed) {
@@ -383,6 +753,7 @@ export function playerListItem(playerId) {
 export function showConfirm(text, onConfirm) {
   refs.confirmText.textContent = text;
   confirmCallback = onConfirm;
+  clearUiFocuses();
   refs.confirmModal.classList.remove('hidden');
 }
 
@@ -391,12 +762,113 @@ export function hideConfirm() {
   refs.confirmModal.classList.add('hidden');
 }
 
+export function getPadConnectIndex() {
+  return padConnectIndex;
+}
+
+export function showPadConnect(padIndex) {
+  padConnectIndex = padIndex;
+  refs.padModalText.textContent = `Controle (Pad ${padIndex + 1}) detectado. Atribua a um jogador desta tela ou crie um novo.`;
+  refs.padNewNameRow.classList.add('hidden');
+  refs.padNewNameInput.value = '';
+  refs.padModalNotice.textContent = '';
+  clearUiFocuses();
+  populatePadAssignList();
+  refs.padModal.classList.remove('hidden');
+}
+
+export function hidePadConnect() {
+  padConnectIndex = -1;
+  refs.padModal.classList.add('hidden');
+  refs.padNewNameRow.classList.add('hidden');
+}
+
+export function assignPadToPlayer(playerId) {
+  const index = padConnectIndex;
+  if (index < 0) return;
+  saveGamepadAssignment(playerId, index);
+  if (!state.localPlayerIds.includes(playerId)) {
+    saveLocalPlayers([...state.localPlayerIds, playerId]);
+  }
+  hidePadConnect();
+  renderLobby();
+}
+
+function populatePadAssignList() {
+  const room = state.currentRoom;
+  refs.padAssignList.innerHTML = '';
+  if (!room) return;
+  room.players
+    .filter(player => state.localPlayerIds.includes(player.id))
+    .forEach(player => {
+      const li = document.createElement('li');
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'pad-assign-btn';
+      const dot = document.createElement('span');
+      dot.className = 'color-dot';
+      dot.style.background = player.color;
+      const label = document.createElement('span');
+      label.textContent = player.nickname + (player.host ? ' (host)' : '');
+      btn.appendChild(dot);
+      btn.appendChild(label);
+      btn.addEventListener('click', () => {
+        assignPadToPlayer(player.id);
+        playClick();
+      });
+      li.appendChild(btn);
+      refs.padAssignList.appendChild(li);
+    });
+}
+
+function handlePadCreate() {
+  const index = padConnectIndex;
+  if (index < 0) return;
+  const nickname = refs.padNewNameInput.value.trim();
+  if (!nickname) {
+    refs.padModalNotice.textContent = 'Informe um apelido.';
+    return;
+  }
+  const result = rooms.addLocalPlayer(nickname);
+  if (result.error) {
+    refs.padModalNotice.textContent = result.error;
+    return;
+  }
+  saveGamepadAssignment(result.player.id, index);
+  hidePadConnect();
+  spawnConfetti(30);
+  renderLobby();
+}
+
+export function openInviteModal() {
+  const room = state.currentRoom;
+  if (!room) return;
+  refs.inviteLinkInput.value = `${location.origin}${location.pathname}?room=${room.code}`;
+  clearUiFocuses();
+  refs.inviteModal.classList.remove('hidden');
+}
+
+export function closeInviteModal() {
+  refs.inviteModal.classList.add('hidden');
+}
+
+export function getSettingsPlayer() {
+  const room = state.currentRoom;
+  if (!room) return getMyPlayer();
+  const target = state.configTargetId || state.myPlayerId;
+  return room.players.find(player => player.id === target) || getMyPlayer();
+}
+
 export function showScreen(name) {
   state.currentScreen = name;
+  clearUiFocuses();
   refs.screenWelcome.classList.toggle('hidden', name !== 'welcome');
   refs.screenLobby.classList.toggle('hidden', name !== 'lobby');
   refs.screenGame.classList.toggle('hidden', name !== 'game');
-  if (name !== 'lobby') closeSettingsPanel();
+  if (name !== 'lobby') {
+    closeSettingsPanel();
+    closeHatPicker();
+  }
 }
 
 export function showNotice(element, message) {
@@ -416,12 +888,82 @@ export function showLobbyAlert(text, type) {
   setTimeout(() => alert.remove(), 4500);
 }
 
+export function showGameAlert(text, type) {
+  const alert = document.createElement('div');
+  alert.className = `game-alert ${type || ''}`;
+  alert.textContent = text;
+  refs.gameAlerts.appendChild(alert);
+  setTimeout(() => alert.remove(), 4500);
+}
+
+let lastPadsSignature = null;
+
 export function updateGamepadStatus() {
   if (state.currentScreen !== 'lobby') return;
   const pads = connectedGamepads();
   refs.gamepadStatus.textContent = pads.length > 0
-    ? `Controles conectados: ${pads.length} (${pads.map(gamepadName).join(', ')})`
-    : 'Nenhum controle conectado. Use o teclado ou conecte um gamepad.';
+    ? `Controles: ${pads.length} (${pads.map(gamepadName).join(', ')}) · Pressione um botão de um controle novo para adicionar um jogador.`
+    : 'Conecte um controle para adicionar jogadores nesta tela.';
+  const signature = pads.map(pad => pad.index).join(',');
+  if (signature !== lastPadsSignature) {
+    lastPadsSignature = signature;
+    refreshControlAssignments();
+  }
+}
+
+function buildControlAssign(player, pads, canAssign) {
+  const ctrlSelect = document.createElement('select');
+  ctrlSelect.className = 'control-assign';
+  ctrlSelect.title = canAssign ? 'Escolha seu controle' : 'Controle deste jogador';
+  const assigned = getGamepadAssignment(player.id);
+  const padConnected = assigned >= 0 && pads.some(pad => pad.index === assigned);
+  const keyboardOption = document.createElement('option');
+  keyboardOption.value = '-1';
+  keyboardOption.textContent = 'Teclado';
+  ctrlSelect.appendChild(keyboardOption);
+  pads.forEach(pad => {
+    const opt = document.createElement('option');
+    opt.value = String(pad.index);
+    opt.textContent = `Pad ${pad.index + 1} · ${gamepadName(pad, pad.index)}`;
+    ctrlSelect.appendChild(opt);
+  });
+  ctrlSelect.value = padConnected ? String(assigned) : '-1';
+  ctrlSelect.disabled = !canAssign;
+  ctrlSelect.addEventListener('change', () => {
+    const chosen = Number(ctrlSelect.value);
+    const room = state.currentRoom;
+    if (room) {
+      const takenBy = room.players.find(other =>
+        other.id !== player.id && getGamepadAssignment(other.id) === chosen
+      );
+      if (takenBy && (chosen >= 0 || room.mode === 'local')) {
+        if (chosen === -1) {
+          showLobbyAlert(`O teclado já está em uso por ${takenBy.nickname}.`, 'leave');
+        } else {
+          showLobbyAlert(`O Pad ${chosen + 1} já está em uso por ${takenBy.nickname}.`, 'leave');
+        }
+        renderLobby();
+        return;
+      }
+    }
+    saveGamepadAssignment(player.id, chosen);
+    renderLobby();
+  });
+  return ctrlSelect;
+}
+
+function refreshControlAssignments() {
+  const room = state.currentRoom;
+  if (!room) return;
+  const pads = connectedGamepads();
+  room.players.forEach(player => {
+    const item = playerListItem(player.id);
+    if (!item) return;
+    const old = item.querySelector('.control-assign');
+    if (!old) return;
+    const canAssign = player.id === state.myPlayerId || isHost() || (state.localPlayerIds || []).includes(player.id);
+    item.replaceChild(buildControlAssign(player, pads, canAssign), old);
+  });
 }
 
 function getKeyLabel(playerId, action) {
@@ -434,8 +976,16 @@ function getKeyLabel(playerId, action) {
 
 export function renderSettings() {
   const room = state.currentRoom;
-  const player = getMyPlayer();
+  const player = getSettingsPlayer();
   if (!room || !player) return;
+  if (refs.settingsTitle) {
+    refs.settingsTitle.textContent = '';
+    refs.settingsTitle.append('Configurações de ');
+    const nameSpan = document.createElement('span');
+    nameSpan.style.color = player.color;
+    nameSpan.textContent = player.nickname;
+    refs.settingsTitle.appendChild(nameSpan);
+  }
   refs.playerColorInput.value = player.color;
   refs.colorHexDisplay.textContent = player.color.toUpperCase();
   refs.hatBtn.textContent = `Escolher chapéu · ${getHatById(player.hat).name}`;
@@ -465,13 +1015,14 @@ export function renderLobby() {
   const room = state.currentRoom;
   if (!room) return;
   refs.roomCodeDisplay.textContent = room.code;
-  refs.roomStatusDisplay.textContent = room.started ? ROOM_STATUS.playing : ROOM_STATUS.waiting;
-  refs.roomModeDisplay.textContent = room.mode === 'local'
-    ? 'Multijogador local (uma tela só)'
-    : 'Online (uma tela para cada player)';
   refs.maxPlayersDisplay.textContent = `${room.players.length} / ${room.maxPlayers}`;
-  const player = getMyPlayer();
-  refs.yourRoleDisplay.textContent = player ? `${player.nickname}${player.host ? ' (host)' : ''}` : 'Convidado';
+  if (refs.playersStatusLine) {
+    const countFull = room.players.length >= room.maxPlayers;
+    refs.playersStatusLine.classList.toggle('full', countFull);
+    refs.playersStatusLine.classList.toggle('partial', !countFull);
+  }
+  if (refs.inviteBtn) refs.inviteBtn.classList.remove('hidden');
+  if (padConnectIndex >= 0 && !refs.padModal.classList.contains('hidden')) populatePadAssignList();
 
   updateGamepadStatus();
 
@@ -493,34 +1044,18 @@ export function renderLobby() {
       badge.appendChild(strong);
       item.appendChild(badge);
       const you = document.createElement('span');
-      you.textContent = player.id === state.myPlayerId ? 'Você' : '';
+      you.textContent = (state.localPlayerIds || []).includes(player.id) ? 'Você' : '';
       item.appendChild(you);
+      if (player.score > 0) {
+        const score = document.createElement('span');
+        score.className = 'player-score';
+        score.textContent = `${player.score} pts`;
+        item.appendChild(score);
+      }
 
       const isMine = player.id === state.myPlayerId;
-      const canAssign = isMine || isHost();
-      const ctrlSelect = document.createElement('select');
-      ctrlSelect.className = 'control-assign';
-      ctrlSelect.title = isMine ? 'Escolha seu controle' : 'Controle deste jogador';
-      const pads = connectedGamepads();
-      const assigned = getGamepadAssignment(player.id);
-      const padConnected = assigned >= 0 && pads.some(pad => pad.index === assigned);
-      const keyboardOption = document.createElement('option');
-      keyboardOption.value = '-1';
-      keyboardOption.textContent = 'Teclado';
-      ctrlSelect.appendChild(keyboardOption);
-      pads.forEach((pad) => {
-        const opt = document.createElement('option');
-        opt.value = String(pad.index);
-        opt.textContent = `Pad ${pad.index + 1} · ${gamepadName(pad, pad.index)}`;
-        ctrlSelect.appendChild(opt);
-      });
-      ctrlSelect.value = padConnected ? String(assigned) : '-1';
-      ctrlSelect.disabled = !canAssign;
-      ctrlSelect.addEventListener('change', () => {
-        saveGamepadAssignment(player.id, Number(ctrlSelect.value));
-        renderLobby();
-      });
-      item.appendChild(ctrlSelect);
+      const canAssign = isMine || isHost() || (state.localPlayerIds || []).includes(player.id);
+      item.appendChild(buildControlAssign(player, connectedGamepads(), canAssign));
 
       refs.playerList.appendChild(item);
     });
@@ -528,7 +1063,6 @@ export function renderLobby() {
   renderedPlayerIds = new Set(room.players.map(p => p.id));
 
   refs.lobbyNotice.textContent = '';
-  refs.hostHint.textContent = isHost() ? 'Você pode iniciar a partida quando quiser.' : 'Aguarde o host iniciar o jogo.';
   refs.startGameBtn.disabled = !isHost() || room.players.length < 2;
 
   setStartButtonPressed(isCountdownActive());
@@ -537,47 +1071,62 @@ export function renderLobby() {
 
 export function updateHud() {}
 
-function coloredName(id, fallback) {
-  const gs = state.gameState;
-  const player = gs && gs.players && gs.players.find(p => p.id === id);
-  if (player) return `<span style="color:${player.color};font-weight:900">${player.nickname}</span>`;
-  return fallback || '';
-}
-
 export function showResultMessage(result) {
   refs.messageBox.classList.remove('hidden');
-  const isVictory = !!result.winnerId && result.winnerId === state.myPlayerId;
-  if (isVictory) {
-    refs.messageTitle.textContent = 'Você venceu! 👑';
-    const loserHtml = coloredName(result.loserId, result.loserName || 'seu oponente');
-    refs.messageText.innerHTML = `A bomba explodiu em <strong>${loserHtml}</strong>.<br>Você é o grande vencedor da rodada! 👑`;
-    refs.messageBox.classList.add('victory');
-    refs.messageBox.classList.remove('explode');
-    spawnConfetti(120, refs.messageBox);
-    playSound('victory');
+  refs.messageBox.classList.remove('victory', 'explode');
+  const winnerId = result.winnerId;
+  if (winnerId) {
+    refs.messageTitle.textContent = '';
+    refs.messageTitle.appendChild(document.createTextNode('👑 '));
+    const winnerEntry = (result.scoreboard || []).find(entry => entry.id === winnerId);
+    const nameSpan = document.createElement('span');
+    nameSpan.style.color = winnerEntry && winnerEntry.color ? winnerEntry.color : '#ffd23f';
+    nameSpan.textContent = result.winnerName || 'Jogador';
+    refs.messageTitle.appendChild(nameSpan);
+    refs.messageTitle.appendChild(document.createTextNode(' VENCEU! 👑'));
+    refs.messageText.innerHTML = '';
   } else {
     refs.messageTitle.textContent = result.title || 'Fim';
-    if (result.text) {
-      refs.messageText.innerHTML = result.text;
-    } else {
-      const loserHtml = coloredName(result.loserId, result.loserName || '');
-      const winnerHtml = coloredName(result.winnerId, result.winnerName || '');
-      refs.messageText.innerHTML = loserHtml
-        ? `A bomba explodiu em <strong>${loserHtml}</strong>.<br>Vencedor: <strong>${winnerHtml}</strong>`
-        : (winnerHtml ? `Vencedor: <strong>${winnerHtml}</strong>` : '');
-    }
-    refs.messageBox.classList.toggle('explode', (result.title || '') === 'Explodiu!');
-    refs.messageBox.classList.remove('victory');
+    refs.messageText.innerHTML = result.text || '';
   }
+  renderScoreboard(result.scoreboard);
 }
 
-export function showToast(message) {
-  refs.toastBox.textContent = message;
-  refs.toastBox.classList.remove('hidden');
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => {
-    refs.toastBox.classList.add('hidden');
-  }, 1500);
+function renderScoreboard(board) {
+  if (!refs.scoreboard || !refs.scoreboardList) return;
+  if (!board || board.length === 0) {
+    refs.scoreboard.classList.add('hidden');
+    return;
+  }
+  refs.scoreboard.classList.remove('hidden');
+  const places = ['1º', '2º', '3º', '4º'];
+  refs.scoreboardList.innerHTML = '';
+  board.forEach((entry, index) => {
+    const li = document.createElement('li');
+    li.className = 'scoreboard-item' + (index === 0 ? ' first' : '');
+    const place = document.createElement('span');
+    place.className = 'scoreboard-place';
+    if (index === 0) {
+      const crown = document.createElement('span');
+      crown.className = 'scoreboard-crown';
+      crown.textContent = '👑 ';
+      place.appendChild(crown);
+      place.appendChild(document.createTextNode('1º'));
+    } else {
+      place.textContent = places[index] || `${index + 1}º`;
+    }
+    const name = document.createElement('span');
+    name.className = 'scoreboard-name';
+    name.style.color = entry.color || '#222';
+    name.textContent = entry.nickname;
+    const score = document.createElement('span');
+    score.className = 'scoreboard-score';
+    score.textContent = `${entry.score} pts`;
+    li.appendChild(place);
+    li.appendChild(name);
+    li.appendChild(score);
+    refs.scoreboardList.appendChild(li);
+  });
 }
 
 export function formatControls(playerId) {
@@ -588,5 +1137,5 @@ export function formatControls(playerId) {
 }
 
 export function formatGamepadControls() {
-  return 'Mover: Analógico, Pular: A, Passar: X, Dash: RT';
+  return 'Mover: Analógico, Pular: A, Passar: X, Dash: RT/LT';
 }

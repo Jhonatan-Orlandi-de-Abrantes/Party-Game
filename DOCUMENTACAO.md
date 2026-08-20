@@ -109,6 +109,18 @@ continua contando. O último de pé vence e vê uma tela de vitória com coroa �
   o objetivo da partida ("Encoste em outro jogador para passar a bomba…") e o
   **código da sala fica centralizado** no topo do lobby, com o espaçamento
   adequado entre o placar e o botão "Voltar para lobby".
+- **Controles touch mobile:** dois estilos — **botões de setas** (esquerda/
+  direita + pular + dash) ou **joystick analógico** (stick virtual + pular +
+  dash). Layout totalmente customizável via editor de arrastar-e-soltar. As
+  posições são salvas por dispositivo no `localStorage`. Os controles são
+  ocultados quando a rodada termina.
+- **Sistema de doação PIX:** botão de doação visível no jogo, abre um modal com
+  código PIX copia-e-cola e botão "Copiar código PIX". Suporta presets de valores
+  salvos no `localStorage`.
+- **Sistema de mapas:** 6 mapas únicos (Clássico, Torres, Escadas, Ilhas,
+  Arena, Ziguezague), cada um com cores de fundo e plataformas próprias.
+  Selecionados aleatoriamente sem repetição (cicla todos antes de repetir).
+- **Design responsivo:** breakpoint em 720px para adaptação em telas menores.
 
 ---
 
@@ -147,27 +159,36 @@ mesmo navegador e na mesma origem. Não funciona entre máquinas diferentes
 ```
 PartyGame/
 ├── index.html              → Estrutura HTML das telas (welcome, lobby, game) + popups/modal
-├── IDEIAS-APLICACOES.txt   → Lista de ideias pedidas já implementadas e futuras
-├── JOGOS-REFERENCIA.txt    → Jogos usados como referência visual/sonora
+├── DOC-IDEIAS-APLICACOES.url → Atalho para Google Doc com ideias futuras
+├── JOGOS-REFERENCIA.txt      → Jogos usados como referência visual/sonora
+├── plano-online.png          → Imagem/plano do modo online (referência futura)
+├── REFERENCIAS-MAPAS/        → Imagens de referência para mapas (ilhas.jpg, ziguezague.jpg)
 ├── src/
 │   ├── css/
-│   │   └── style.css       → Todos os estilos (cartões, aba de configs, chapéus, modal, confete)
+│   │   └── style.css         → Todos os estilos (cartões, aba de configs, chapéus, modal, confete, touch, responsivo)
 │   ├── Images/
-│   │   └── BombGame/
-│   │       └── bomb.png    → Sprite da bomba
+│   │   ├── BombGame/
+│   │   │   └── bomb.png      → Sprite da bomba
+│   │   ├── Pix/
+│   │   │   └── qrcode-pix.jpeg → Imagem estática do QR code PIX
+│   │   └── icon/
+│   │       └── icon.png      → Favicon do navegador
 │   └── js/
-│       ├── main.js         → Ponto de entrada: orquestra tudo, loops, eventos, transições
-│       ├── constants.js    → Constantes de jogo (física, timer, teclas, prefixos de storage)
-│       ├── state.js        → Estado global compartilhado + helpers (getMyPlayer, isHost)
-│       ├── storage.js      → Camada de leitura/escrita do localStorage
-│       ├── rooms.js        → Salas, jogadores, host, modo, heartbeat, limpeza de inativos
-│       ├── input.js        → Input de teclado/gamepad; publicação por playerId; atalhos custom
-│       ├── game.js         → Simulação da partida (física, bomba, colisões, partículas)
-│       ├── render.js       → Desenho no canvas (personagens, timer, chapéus, FPS/ping)
-│       ├── hats.js         → Catálogo e desenho dos chapéus (canvas) + previews
-│       ├── ui.js           → DOM/UI: lobby, aba de configs, seleção de chapéu, modal de confirmação
-│       ├── audio.js        → Música (menu/jogo) e efeitos (WebAudio + mp3), com volumes
-│       └── effects.js      → Confetes (efeitos visuais DOM, ancoráveis a um elemento)
+│       ├── main.js           → Ponto de entrada: orquestra tudo, loops, eventos, transições
+│       ├── constants.js      → Constantes de jogo (física, timer, teclas, prefixos de storage)
+│       ├── state.js          → Estado global compartilhado + helpers (getMyPlayer, isHost)
+│       ├── storage.js        → Camada de leitura/escrita do localStorage
+│       ├── rooms.js          → Salas, jogadores, host, modo, heartbeat, limpeza de inativos
+│       ├── input.js          → Input de teclado/gamepad; publicação por playerId; atalhos custom
+│       ├── game.js           → Simulação da partida (física, bomba, colisões, partículas)
+│       ├── render.js         → Desenho no canvas (personagens, timer, chapéus, FPS/ping)
+│       ├── maps.js           → Definição dos 6 mapas (nome, cores, plataformas)
+│       ├── hats.js           → Catálogo e desenho dos chapéus (canvas) + previews
+│       ├── ui.js             → DOM/UI: lobby, aba de configs, seleção de chapéu, modal de confirmação
+│       ├── touch.js          → Controles touch mobile (setas/analogico, editor de layout)
+│       ├── donate.js         → Modal de doação PIX com código copia-e-cola
+│       ├── audio.js          → Música (menu/jogo) e efeitos (WebAudio + mp3), com volumes
+│       ├── effects.js        → Confetes (efeitos visuais DOM, ancoráveis a um elemento)
 ├── musics/
 │   ├── menu/               → Música do menu (menu1.mp3 … menu5.mp3)
 │   ├── game/               → Música da partida (gm1.mp3 … gm11.mp3)
@@ -215,6 +236,14 @@ PartyGame/
 - **Menus por controle (`pollUiGamepad`):** a aba só reage ao gamepad
   **atribuído a um jogador desta aba** (`localPlayerIds`). Isso corrige o bug de
   um controle agir nos menus de duas abas ao mesmo tempo.
+- **Slider por controle:** analógico move 10 unidades, setas direcionais move 1.
+- **Paleta de cores por controle:** navegação em grade 2D (cima/baixo/esquerda/
+  direita) na seletor de cores, com wrap por linha.
+- **Troca de gamepad:** ao selecionar um pad que já está em uso por outro
+  jogador, os pads são trocados automaticamente (ao invés de mostrar erro).
+- **Placar navegável por controle:** o results overlay (tela de vitória com
+  podium) agora é focável pelo controle — pode navegar e clicar "Voltar ao lobby"
+  com o botão A.
 - **Modo Local — conectar controle (`checkLocalPadConnect`):** no lobby,
   se um controle **não atribuído** tiver um botão pressionado, abre o modal de
   atribuição (`showPadConnect`) — atribuir a um jogador desta tela ou criar um
@@ -259,9 +288,11 @@ PartyGame/
     `getResolution`/`saveResolution` (0.05–1),
     `getCustomKeys`/`saveCustomKeys`/`resetCustomKeys` (JSON de atalhos).
   - Por dispositivo (persistente): `getDeviceId()` (UUID único por navegador),
-    `getHat`/`saveHat`.
+    `getHat`/`saveHat`, `getTouchEnabled`/`saveTouchEnabled`,
+    `getTouchStyle`/`saveTouchStyle`, `getTouchLayout`/`saveTouchLayout`/
+    `resetTouchLayout`.
   - Globais: `getMusicVolume`/`setMusicVolume`, `getSfxVolume`/`setSfxVolume`
-    (0–100, padrão 70 e 90).
+    (0–100, padrão 70 e 90), `bombPartyPixPresets` (presets de valores PIX).
 
 ### `src/js/rooms.js`
 - Criação/entrada em salas, geração de código (`randomCode`) e cor (`randomColor`).
@@ -364,16 +395,14 @@ PartyGame/
   (**Homem-aranha**, fantasia de corpo inteiro), `flash` (**Flash**), `plunger`,
   `fuse`, `amongus` (Tripulante), `chicken`, `creeper`, `sans`,
   `cavalheiro` (Cavalheiro Branco), `cavalheiro-negro` (Cavalheiro Negro) e os
-  cosméticos temáticos (referências em `REFERENCIAS/`): `cupcake` (Cupcake da
-  Chica com vela acesa),
+  cosméticos temáticos: `cupcake` (Cupcake da Chica com vela acesa),
   `guitarra` (Guitarra do Bonnie, menor e na diagonal do peito),
   `foxy` (FNAF — orelhas de raposa + tapa-olho + focinho com dentes escuros),
-  `rick` (Cabelo do Rick), `kaneki-mask` (Máscara do
-  Kaneki), `avatar` (Mestre do ar — tatuagem de **seta azul na testa** apontando
+  `avatar` (Mestre do ar — tatuagem de **seta azul na testa** apontando
   para baixo, inteiramente sobre a cabeça, sem nada flutuando),
   `miles` (Roupa Miles Morales),
   `venom` (Roupa Venom) e `ironman` (Roupa Homem
-  de Ferro).
+  de Ferro). Total: 33 opções (incluindo "Vazio").
 - **Pixel art** (`PIXEL_HATS`): definidos por `palette` + `rows` + `cell` (px por
   célula, padrão 3) + `dy` (deslocamento vertical, positivo desce). São eles:
   `cap-p`, `crown-p`.
@@ -582,6 +611,39 @@ diferentes recortes (rosto, topo, corpo) para captar o todo antes de codificar.
   ancorado no retângulo desse elemento (ex.: o modal de vitória); senão, cai na
   tela toda. Usado ao entrar na sala e ao iniciar a partida.
 
+### `src/js/maps.js`
+- `MAPS`: array com 6 definições de mapa, cada uma com `name`, `bg` (cor de
+  fundo), `platformColors` (array de cores para as plataformas) e `platforms`
+  (array de retângulos `{x, y, width, height}`). Mapas: Clássico, Torres,
+  Escadas, Ilhas, Arena, Ziguezague.
+- Seleção aleatória sem repetição: o jogo cicla por todos os mapas antes de
+  repetir qualquer um.
+- Mapas Ilhas e Ziguezague foram redesenhados usando imagens de referência
+  (`REFERENCIAS-MAPAS/`) — as posições das plataformas seguem as linhas verdes
+  das imagens.
+
+### `src/js/touch.js`
+- Controles touch mobile para dispositivos com tela sensível ao toque.
+- **Dois estilos:**
+  - **Setas** (`arrows`): botões de seta esquerda/direita + botões de ação
+    (JUMP, DASH).
+  - **Joystick analógico** (`analog`): stick virtual + botões de ação.
+- **Editor de layout:** `openLayoutEditor()` abre um editor onde cada botão é
+  arrastável (drag-and-drop). As posições são salvas como porcentagens
+  (`DEFAULT_TOUCH_LAYOUT`) e persistidas no `localStorage`.
+- **Visibilidade:** `updateTouchVisibility()` mostra os controles apenas na tela
+  de jogo quando o round está ativo e o player tem touch habilitado.
+- Cada botão usa `setTouchInput(action, bool)` do `input.js` para publicar
+  input. O joystick analógico converte posição X em left/right.
+
+### `src/js/donate.js`
+- Modal de doação PIX. Botão `donateBox` abre o modal (`donateModal`).
+- Exibe um campo de texto com o código PIX copia-e-cola e um botão "Copiar
+  código PIX" que usa `navigator.clipboard.writeText` (com fallback para
+  `execCommand`).
+- `updateDonateVisibility()`: oculta o botão de doação durante partidas quando
+  o player tem controles touch habilitados (para não atrapalhar o jogo).
+
 ---
 
 ## 5. Fluxo de dados (resumo)
@@ -597,9 +659,12 @@ diferentes recortes (rosto, topo, corpo) para captar o todo antes de codificar.
 5. **Configurações por player** → `bombPartyAutoPass_<id>`,
    `bombPartyGamepad_<id>`, `bombPartyFpsEnabled_<id>`,
    `bombPartyFpsColor_<id>`, `bombPartyFpsLimit_<id>`,
-   `bombPartyResolution_<id>`, `bombPartyKeys_<id>`.
+   `bombPartyResolution_<id>`, `bombPartyKeys_<id>`,
+   `bombPartyTouchEnabled_<id>`, `bombPartyTouchStyle_<id>`,
+   `bombPartyTouchLayout_<id>`.
 6. **Por dispositivo** → `bombPartyDeviceId`, `bombPartyHat_<deviceId>`.
-7. **Globais** → `bombPartyMusicVolume`, `bombPartySfxVolume`.
+7. **Globais** → `bombPartyMusicVolume`, `bombPartySfxVolume`,
+   `bombPartyPixPresets`.
 
 ## 6. Chaves do `localStorage`
 
@@ -620,8 +685,12 @@ diferentes recortes (rosto, topo, corpo) para captar o todo antes de codificar.
 | `bombPartyKeys_<id>`         | JSON com atalhos customizados (`left/right/jump/pass/dash`) |
 | `bombPartyDeviceId`          | UUID persistente do navegador (para salvar chapéu) |
 | `bombPartyHat_<deviceId>`    | Id do chapéu escolhido (padrão `none`)             |
+| `bombPartyTouchEnabled_<id>` | "1"/"0" — controles touch habilitados              |
+| `bombPartyTouchStyle_<id>`   | Estilo do touch: "arrows" ou "analog"              |
+| `bombPartyTouchLayout_<id>`  | JSON com posições dos botões touch (porcentagens)   |
 | `bombPartyMusicVolume`       | Volume da música (0–100, padrão 70)                |
 | `bombPartySfxVolume`         | Volume dos efeitos (0–100, padrão 90)              |
+| `bombPartyPixPresets`        | Presets de valores PIX separados por vírgula       |
 
 ## 7. Pontos de atenção ao mexer no código
 

@@ -3,7 +3,6 @@ import {
   STORAGE_KEY,
   INPUT_PREFIX,
   GAME_STATE_PREFIX,
-  AUTO_PASS_PREFIX,
   GAMEPAD_PREFIX,
   FPS_ENABLED_PREFIX,
   FPS_COLOR_PREFIX,
@@ -13,7 +12,11 @@ import {
   HAT_PREFIX,
   MUSIC_VOLUME_KEY,
   SFX_VOLUME_KEY,
-  DEVICE_ID_KEY
+  DEVICE_ID_KEY,
+  TOUCH_ENABLED_PREFIX,
+  TOUCH_STYLE_PREFIX,
+  TOUCH_LAYOUT_PREFIX,
+  PIX_PRESETS_KEY
 } from './constants.js';
 
 export function loadRooms() {
@@ -85,14 +88,6 @@ function readPref(prefix, playerId) {
 function writePref(prefix, playerId, value) {
   localStorage.setItem(prefix + playerId, value);
   localStorage.setItem(deviceKey(prefix, playerId), value);
-}
-
-export function saveAutoPass(playerId, enabled) {
-  writePref(AUTO_PASS_PREFIX, playerId, enabled ? '1' : '0');
-}
-
-export function getAutoPass(playerId) {
-  return readPref(AUTO_PASS_PREFIX, playerId) === '1';
 }
 
 export function saveGamepadAssignment(playerId, index) {
@@ -189,4 +184,59 @@ export function getSfxVolume() {
 
 export function setSfxVolume(value) {
   localStorage.setItem(SFX_VOLUME_KEY, String(value));
+}
+
+function touchDeviceKey(prefix) {
+  return prefix + 'device:' + getDeviceId();
+}
+
+export function getTouchEnabled() {
+  const value = localStorage.getItem(touchDeviceKey(TOUCH_ENABLED_PREFIX));
+  if (value === null) {
+    return typeof window !== 'undefined' && ('ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0);
+  }
+  return value === '1';
+}
+
+export function saveTouchEnabled(enabled) {
+  localStorage.setItem(touchDeviceKey(TOUCH_ENABLED_PREFIX), enabled ? '1' : '0');
+}
+
+export function getTouchStyle() {
+  const value = localStorage.getItem(touchDeviceKey(TOUCH_STYLE_PREFIX));
+  return value === 'arrows' ? 'arrows' : 'analog';
+}
+
+export function saveTouchStyle(style) {
+  localStorage.setItem(touchDeviceKey(TOUCH_STYLE_PREFIX), style === 'analog' ? 'analog' : 'arrows');
+}
+
+export function getTouchLayout() {
+  try {
+    return JSON.parse(localStorage.getItem(touchDeviceKey(TOUCH_LAYOUT_PREFIX))) || null;
+  } catch (error) {
+    return null;
+  }
+}
+
+export function saveTouchLayout(layout) {
+  localStorage.setItem(touchDeviceKey(TOUCH_LAYOUT_PREFIX), JSON.stringify(layout));
+}
+
+export function resetTouchLayout() {
+  localStorage.removeItem(touchDeviceKey(TOUCH_LAYOUT_PREFIX));
+}
+
+export function getPixPresets() {
+  const raw = localStorage.getItem(PIX_PRESETS_KEY);
+  if (!raw) return [1, 3, 5];
+  const values = raw
+    .split(',')
+    .map(part => parseFloat(part.trim().replace(',', '.')))
+    .filter(value => !isNaN(value) && value > 0);
+  return values.length > 0 ? values : [1, 3, 5];
+}
+
+export function savePixPresets(value) {
+  localStorage.setItem(PIX_PRESETS_KEY, value);
 }

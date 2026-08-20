@@ -32,12 +32,20 @@ import {
   uiBack,
   showPadConnect,
   getPadConnectIndex,
-  getSettingsPlayer
+  getSettingsPlayer,
+  showResultsOverlay,
+  hideResultsOverlay,
+  setResultsOverlayBackCallback
 } from './ui.js';
 
 function showRoundResult(result) {
   state.endShown = true;
-  showResultMessage(result);
+  if (result.maxScoreReached) {
+    showResultsOverlay(result);
+    audio.playSound('leaderboard');
+  } else {
+    showResultMessage(result);
+  }
 }
 
 function playDeathSoundIfNew(st) {
@@ -94,7 +102,12 @@ function becomeSimulator() {
     state.gameState = st;
     drawScene();
     updateHud();
-    showResultMessage(st.roundResult);
+    if (st.roundResult.maxScoreReached) {
+      showResultsOverlay(st.roundResult);
+      audio.playSound('leaderboard');
+    } else {
+      showResultMessage(st.roundResult);
+    }
     return;
   }
   if (st && st.running) {
@@ -244,6 +257,7 @@ function enterGameScreen() {
   refs.messageBox.classList.add('hidden');
   refs.messageBox.classList.remove('explode');
   refs.messageBox.classList.remove('victory');
+  closeSettingsPanel();
   applyResolution();
   audio.playGameMusic();
   showScreen('game');
@@ -259,6 +273,13 @@ function quitToLobby() {
   stopSimLoop();
   stopGameWait();
   stopCountdown();
+  hideResultsOverlay();
+  if (state.gameState && state.gameState.roundResult && state.gameState.roundResult.maxScoreReached) {
+    if (state.currentRoom) {
+      state.currentRoom.players.forEach(p => { p.score = 0; });
+      storage.saveRooms();
+    }
+  }
   state.gameState = null;
   state.lastSeenRev = -1;
   state.endShown = false;
@@ -410,6 +431,11 @@ refs.startGameBtn.addEventListener('click', () => {
 
 refs.returnLobbyBtn.addEventListener('click', quitToLobby);
 
+if (refs.resultsLobbyBtn) {
+  refs.resultsLobbyBtn.addEventListener('click', quitToLobby);
+}
+setResultsOverlayBackCallback(quitToLobby);
+
 refs.gameQuitBtn.addEventListener('click', () => {
   showConfirm('Voltar para o lobby?', quitToLobby);
 });
@@ -423,16 +449,10 @@ refs.playerColorInput.addEventListener('input', () => {
   renderLobby();
 });
 
-refs.autoPassCheckbox.addEventListener('change', () => {
-  const player = getSettingsPlayer();
-  if (!player) return;
-  storage.saveAutoPass(player.id, refs.autoPassCheckbox.checked);
-});
-
 refs.fpsToggle.addEventListener('change', () => {
-  const player = getSettingsPlayer();
-  if (!player) return;
-  storage.saveFpsEnabled(player.id, refs.fpsToggle.checked);
+  const checked = refs.fpsToggle.checked;
+  const ids = state.localPlayerIds || [];
+  for (const id of ids) storage.saveFpsEnabled(id, checked);
 });
 
 refs.fpsColorInput.addEventListener('input', () => {
@@ -584,11 +604,11 @@ const uiPadState = new Map();
 let lastPadPressed = new Map();
 const UI_MOVE_REPEAT_DELAY = 240;
 
-function applyUiMove(dir, playerId) {
-  if (dir === 'up') moveUiFocus(0, -1, playerId);
-  else if (dir === 'down') moveUiFocus(0, 1, playerId);
-  else if (dir === 'left') moveUiFocus(-1, 0, playerId);
-  else if (dir === 'right') moveUiFocus(1, 0, playerId);
+function applyUiMove(dir, playerId, isAnalog) {
+  if (dir === 'up') moveUiFocus(0, -1, playerId, isAnalog);
+  else if (dir === 'down') moveUiFocus(0, 1, playerId, isAnalog);
+  else if (dir === 'left') moveUiFocus(-1, 0, playerId, isAnalog);
+  else if (dir === 'right') moveUiFocus(1, 0, playerId, isAnalog);
 }
 
 function padPressedAny(pad) {
@@ -652,6 +672,7 @@ function padUiState(pad) {
   if (!st) {
     st = {
       prev: { up: false, down: false, left: false, right: false, a: false, b: false },
+      pending: { up: false, down: false, left: false, right: false, a: false, b: false },
       options: false,
       dir: null,
       accum: 0
@@ -668,17 +689,16 @@ function clearUiPadState() {
 function pollUiGamepad() {
   checkLocalPadConnect();
   const inGame = state.currentScreen === 'game';
-  const modalOpen = !!document.querySelector('.modal:not(.hidden)');
+  const blockingModalOpen = !!document.querySelector('.modal:not(.hidden):not(#selectPopupOverlay):not(#colorPalettePopup)');
   const uiPads = getUiPads();
 
-  if (inGame && !modalOpen && !state.endShown) {
+  if (inGame && !blockingModalOpen && !state.endShown) {
     for (const { pad } of uiPads) {
       const st = padUiState(pad);
       const optionsPressed = !!(pad.buttons[9] && pad.buttons[9].pressed);
       if (optionsPressed && !st.options) refs.gameQuitBtn.click();
       st.options = optionsPressed;
     }
-    clearUiPadState();
     return;
   }
 
@@ -703,16 +723,19 @@ function pollUiGamepad() {
     st.prev = now;
     const optionsPressed = !!(pad.buttons[9] && pad.buttons[9].pressed);
     const edge = (cur, p) => cur && !p;
-    if (edge(now.a, prev.a)) {
+    st.pending.a = st.pending.a || edge(now.a, prev.a);
+    st.pending.b = st.pending.b || edge(now.b, prev.b);
+    if (st.pending.a) {
+      st.pending.a = false;
       if (isCountdownActive() && isHost()) {
         refs.countdownCancelBtn.click();
         continue;
       }
       activateUiFocus(playerId);
     }
-    if (edge(now.b, prev.b)) uiBack(playerId);
+    if (st.pending.b) { st.pending.b = false; uiBack(playerId); }
     if (optionsPressed && !st.options) {
-      if (modalOpen) {
+      if (blockingModalOpen) {
         uiBack(playerId);
       } else if (inGame && state.endShown) {
         uiBack(playerId);
@@ -721,16 +744,22 @@ function pollUiGamepad() {
     st.options = optionsPressed;
 
     const heldDir = now.up ? 'up' : now.down ? 'down' : now.left ? 'left' : now.right ? 'right' : null;
+    const dpadBtn = !!(pad.buttons[12] && pad.buttons[12].pressed) ||
+      !!(pad.buttons[13] && pad.buttons[13].pressed) ||
+      !!(pad.buttons[14] && pad.buttons[14].pressed) ||
+      !!(pad.buttons[15] && pad.buttons[15].pressed);
+    const stickMoved = Math.abs(axis0) > 0.5 || Math.abs(axis1) > 0.5;
+    const useAnalog = stickMoved && !dpadBtn;
     if (heldDir) {
       if (heldDir !== st.dir) {
         st.dir = heldDir;
         st.accum = 0;
-        applyUiMove(heldDir, playerId);
+        applyUiMove(heldDir, playerId, useAnalog);
       } else {
-        st.accum += 100;
+        st.accum += 50;
         if (st.accum >= UI_MOVE_REPEAT_DELAY) {
           st.accum = 0;
-          applyUiMove(heldDir, playerId);
+          applyUiMove(heldDir, playerId, useAnalog);
         }
       }
     } else {
@@ -740,7 +769,7 @@ function pollUiGamepad() {
   }
 }
 
-setInterval(pollUiGamepad, 100);
+setInterval(pollUiGamepad, 50);
 setInterval(updateGamepadStatus, 1500);
 
 document.addEventListener('visibilitychange', () => {

@@ -1,5 +1,5 @@
 import { state, getMyPlayer } from './state.js';
-import { PLAYER_WIDTH, PLAYER_HEIGHT, DASH_COOLDOWN, BOMB_IMAGE_PATH, MAX_BOMB_TIME, TRAIL_LIFE } from './constants.js';
+import { PLAYER_WIDTH, PLAYER_HEIGHT, DASH_COOLDOWN, BOMB_IMAGE_PATH, MAX_BOMB_TIME, TRAIL_LIFE, SHOW_MAP_NAME } from './constants.js';
 import { getFpsEnabled, getFpsColor } from './storage.js';
 import { drawHat } from './hats.js';
 
@@ -38,12 +38,12 @@ export function drawScene() {
 
   ctx.setTransform(resolutionScale, 0, 0, resolutionScale, 0, 0);
   ctx.clearRect(0, 0, 1080, 540);
-  ctx.fillStyle = '#bfe8ff';
+  ctx.fillStyle = (gs.map && gs.map.bg) || '#bfe8ff';
   ctx.fillRect(0, 0, 1080, 540);
 
-  const platformColors = ['#a3d97a', '#7fd3f2', '#f6c768', '#f2a1a1'];
+  const mapColors = (gs.map && gs.map.platformColors) || ['#a3d97a', '#7fd3f2', '#f6c768', '#f2a1a1'];
   gs.platforms.forEach((platform, index) => {
-    ctx.fillStyle = platformColors[index % platformColors.length];
+    ctx.fillStyle = mapColors[index % mapColors.length];
     ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
     ctx.strokeStyle = '#222';
     ctx.lineWidth = 3;
@@ -60,12 +60,13 @@ export function drawScene() {
     drawDashIndicator(player, time);
     if (player.hasBomb) {
       const bob = Math.sin(time * 4) * 3;
-      drawBomb(player.x, player.y - PLAYER_HEIGHT - 46 + bob, 36, 42);
+      drawBomb(player.x, player.y - PLAYER_HEIGHT - 28 + bob, 36, 42);
     }
   });
 
   drawLeaderCrown(gs, time);
   drawBombTimer(gs, time);
+  drawMapName(gs);
   drawStats();
 }
 
@@ -174,9 +175,9 @@ function drawNickname(player) {
   ctx.textAlign = 'center';
   ctx.lineWidth = 3;
   ctx.strokeStyle = '#fff';
-  ctx.strokeText(player.nickname, player.x, player.y - PLAYER_HEIGHT - 32);
+  ctx.strokeText(player.nickname, player.x, player.y - PLAYER_HEIGHT - 14);
   ctx.fillStyle = '#222';
-  ctx.fillText(player.nickname, player.x, player.y - PLAYER_HEIGHT - 32);
+  ctx.fillText(player.nickname, player.x, player.y - PLAYER_HEIGHT - 14);
 }
 
 function drawBombTimer(gs, time) {
@@ -255,7 +256,7 @@ function drawLeaderCrown(gs, time) {
   gs.players.forEach(player => {
     if (!player.alive || player.id !== leaderId) return;
     const bob = Math.sin(time * 3) * 2;
-    const cy = player.y - PLAYER_HEIGHT - 52 - (player.hasBomb ? 26 : 0);
+    const cy = player.y - PLAYER_HEIGHT - 34 - (player.hasBomb ? 26 : 0);
     ctx.save();
     ctx.translate(player.x, cy + bob);
     ctx.shadowColor = '#ffd23f';
@@ -352,6 +353,18 @@ let fpsFrames = 0;
 let fpsLastTime = performance.now();
 let fpsDisplay = 0;
 let statsBoxW = 0;
+
+function drawMapName(gs) {
+  if (!SHOW_MAP_NAME) return;
+  if (!gs.map || !gs.map.name) return;
+  ctx.font = 'bold 12px "Trebuchet MS", Arial, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#fff';
+  ctx.strokeText(gs.map.name, 1066, 528);
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillText(gs.map.name, 1066, 528);
+}
 
 function drawStats() {
   const me = getMyPlayer();

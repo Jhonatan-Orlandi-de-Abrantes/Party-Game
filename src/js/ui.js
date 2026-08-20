@@ -2,7 +2,6 @@ import { GAME_MODE_NAME, PLAYER_WIDTH, PLAYER_HEIGHT } from './constants.js';
 import { state, getMyPlayer, isHost, saveLocalPlayers } from './state.js';
 import * as rooms from './rooms.js';
 import {
-  getAutoPass,
   getGamepadAssignment,
   saveGamepadAssignment,
   getFpsEnabled,
@@ -28,6 +27,14 @@ import { connectedGamepads, getEffectiveControls, gamepadName } from './input.js
 import { spawnConfetti } from './effects.js';
 import { playSound, playClick, setMusicVolume as applyMusicVolume, setSfxVolume as applySfxVolume } from './audio.js';
 import { HATS, getHatById, drawHatPreview } from './hats.js';
+import { openLayoutEditor, closeLayoutEditor, updateTouchVisibility } from './touch.js';
+import { updateDonateVisibility } from './donate.js';
+import {
+  saveTouchEnabled,
+  getTouchEnabled,
+  saveTouchStyle,
+  getTouchStyle
+} from './storage.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -64,7 +71,6 @@ export const refs = {
   playerColorInput: $('playerColorInput'),
   colorHexDisplay: $('colorHexDisplay'),
   hatBtn: $('hatBtn'),
-  autoPassCheckbox: $('autoPassCheckbox'),
   fpsToggle: $('fpsToggle'),
   fpsColorInput: $('fpsColorInput'),
   fpsColorHexDisplay: $('fpsColorHexDisplay'),
@@ -105,7 +111,22 @@ export const refs = {
   padModalCancelBtn: $('padModalCancelBtn'),
   padModalNotice: $('padModalNotice'),
   settingsTitle: $('settingsTitle'),
-  playersStatusLine: $('playersStatusLine')
+  playersStatusLine: $('playersStatusLine'),
+  touchEnabledCheckbox: $('touchEnabledCheckbox'),
+  touchStyleSelect: $('touchStyleSelect'),
+  touchLayoutBtn: $('touchLayoutBtn'),
+  resultsOverlay: $('resultsOverlay'),
+  resultsTitle: $('resultsTitle'),
+  resultsPodium: $('resultsPodium'),
+  resultsButtonRow: $('resultsButtonRow'),
+  resultsLobbyBtn: $('resultsLobbyBtn'),
+  selectPopupOverlay: $('selectPopupOverlay'),
+  selectPopupTitle: $('selectPopupTitle'),
+  selectPopupOptions: $('selectPopupOptions'),
+  selectPopupCancelBtn: $('selectPopupCancelBtn'),
+  colorPalettePopup: $('colorPalettePopup'),
+  colorPaletteGrid: $('colorPaletteGrid'),
+  colorPaletteCancelBtn: $('colorPaletteCancelBtn')
 };
 
 let confirmCallback = null;
@@ -203,15 +224,13 @@ export function initUi() {
 
   refs.fpsLimitInput.addEventListener('input', () => {
     const value = Number(refs.fpsLimitInput.value);
-    const player = getSettingsPlayer();
-    if (player) saveFpsLimit(player.id, value);
+    syncToAllLocalPlayers(saveFpsLimit, value);
     refs.fpsLimitValue.textContent = value === 0 ? 'Sem limite' : String(value);
   });
 
   refs.resolutionInput.addEventListener('input', () => {
     const value = Number(refs.resolutionInput.value);
-    const player = getSettingsPlayer();
-    if (player) saveResolution(player.id, value / 100);
+    syncToAllLocalPlayers(saveResolution, value / 100);
     refs.resolutionValue.textContent = `${value}%`;
     window.dispatchEvent(new Event('bombparty:resolutionchange'));
   });
@@ -235,6 +254,23 @@ export function initUi() {
     if (player) resetCustomKeys(player.id);
     renderLobby();
   });
+
+  if (refs.touchEnabledCheckbox) {
+    refs.touchEnabledCheckbox.addEventListener('change', () => {
+      saveTouchEnabled(refs.touchEnabledCheckbox.checked);
+    });
+  }
+  if (refs.touchStyleSelect) {
+    refs.touchStyleSelect.addEventListener('change', () => {
+      saveTouchStyle(refs.touchStyleSelect.value);
+    });
+  }
+  if (refs.touchLayoutBtn) {
+    refs.touchLayoutBtn.addEventListener('click', () => {
+      openLayoutEditor();
+      playClick();
+    });
+  }
 
   document.querySelectorAll('.key-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -502,6 +538,14 @@ export function getFocusables() {
     if (cancel.classList.contains('hidden') || cancel.disabled) return [];
     return [cancel];
   }
+  const resultsOverlay = refs.resultsOverlay && !refs.resultsOverlay.classList.contains('hidden');
+  if (resultsOverlay) {
+    return Array.from(refs.resultsOverlay.querySelectorAll(FOCUS_SELECTOR)).filter(el => {
+      if (el.disabled) return false;
+      if (el.offsetParent === null && el.closest('.results-overlay') === null) return false;
+      return true;
+    });
+  }
   const modal = document.querySelector('.modal:not(.hidden)');
   const popup = document.querySelector('.hat-popup:not(.hidden)');
   const screen = document.querySelector('.screen:not(.hidden)');
@@ -511,16 +555,32 @@ export function getFocusables() {
     scope = modal;
   } else if (popup) {
     scope = popup;
-  } else if (refs.settingsPanel.classList.contains('open') && settingsOpenByController) {
+  } else if (refs.settingsPanel.classList.contains('open')) {
     scope = refs.settingsPanel;
     skipPanel = false;
   }
   if (!scope) return [];
-  return Array.from(scope.querySelectorAll(FOCUS_SELECTOR)).filter(el => {
+  let list = Array.from(scope.querySelectorAll(FOCUS_SELECTOR)).filter(el => {
     if (el.disabled || el.offsetParent === null) return false;
+    if (el.hasAttribute('data-no-controller-toggle')) return false;
     if (skipPanel && refs.settingsPanel.contains(el)) return false;
+    if (el.closest('.touch-controls')) return false;
     return true;
   });
+  if (scope === document.getElementById('screen-lobby') && !modal && !popup && !refs.settingsPanel.classList.contains('open')) {
+    const gear = refs.settingsGearBtn;
+    const gearIdx = list.indexOf(gear);
+    if (gearIdx >= 0) list.splice(gearIdx, 1);
+    const startBtn = refs.startGameBtn;
+    const inviteBtn = refs.inviteBtn;
+    const leaveBtn = refs.leaveRoomBtn;
+    const btns = [startBtn, inviteBtn, leaveBtn].filter(b => list.indexOf(b) >= 0);
+    btns.forEach(b => { const i = list.indexOf(b); if (i >= 0) list.splice(i, 1); });
+    const selects = list.filter(el => el.tagName === 'SELECT');
+    selects.forEach(s => { const i = list.indexOf(s); if (i >= 0) list.splice(i, 1); });
+    list = [...btns, ...selects, gear];
+  }
+  return list;
 }
 
 function getUiActivePlayer(pid) {
@@ -589,7 +649,7 @@ function setUiFocusIndex(index, pid) {
   if (target && typeof target.scrollIntoView === 'function') target.scrollIntoView({ block: 'nearest' });
 }
 
-export function moveUiFocus(dx, dy, pid) {
+export function moveUiFocus(dx, dy, pid, isAnalog) {
   const list = getFocusables();
   if (list.length === 0) return;
   let index = getUiFocusIndex(pid);
@@ -609,11 +669,16 @@ export function moveUiFocus(dx, dy, pid) {
     return;
   }
 
+  if (target.classList.contains('color-swatch')) {
+    moveColorGridFocus(list, dx, dy, pid);
+    return;
+  }
+
   if (target.type === 'range' && dx !== 0) {
-    const step = Number(target.step) || 1;
     const min = Number(target.min);
     const max = Number(target.max);
-    const next = Math.min(max, Math.max(min, Number(target.value) + dx * step));
+    const bigStep = isAnalog ? 5 : 1;
+    const next = Math.min(max, Math.max(min, Number(target.value) + dx * bigStep));
     target.value = String(next);
     target.dispatchEvent(new Event('input', { bubbles: true }));
     return;
@@ -658,6 +723,40 @@ function moveHatGridFocus(list, dx, dy, pid) {
   setUiFocusIndex(next, pid);
 }
 
+function moveColorGridFocus(list, dx, dy, pid) {
+  const idx = getUiFocusIndex(pid);
+  const swatches = list.filter(el => el.classList.contains('color-swatch'));
+  const current = swatches.indexOf(list[idx]);
+  const cancelBtn = refs.colorPaletteCancelBtn;
+  const cancelInList = cancelBtn && cancelInFocus(list, cancelBtn);
+  if (current < 0) {
+    if (cancelBtn && list[idx] === cancelBtn) {
+      if (dx < 0) { setUiFocusIndex(list.indexOf(swatches[swatches.length - 1]), pid); return; }
+      if (dx > 0) { setUiFocusIndex(list.indexOf(swatches[0]), pid); return; }
+      setUiFocusIndex(idx + dx, pid);
+      return;
+    }
+    setUiFocusIndex(idx + dx, pid);
+    return;
+  }
+  if (dx > 0) {
+    if (current < swatches.length - 1) {
+      setUiFocusIndex(list.indexOf(swatches[current + 1]), pid);
+    } else if (cancelInList) {
+      setUiFocusIndex(list.indexOf(cancelBtn), pid);
+    } else {
+      setUiFocusIndex(list.indexOf(swatches[0]), pid);
+    }
+  } else if (dx < 0) {
+    if (current > 0) {
+      setUiFocusIndex(list.indexOf(swatches[current - 1]), pid);
+    } else {
+      setUiFocusIndex(list.indexOf(swatches[swatches.length - 1]), pid);
+    }
+  }
+}
+function cancelInFocus(list, btn) { return list.indexOf(btn) >= 0; }
+
 export function activateUiFocus(pid) {
   const list = getFocusables();
   if (list.length === 0) return;
@@ -684,29 +783,52 @@ export function activateUiFocus(pid) {
     renderUiFocuses();
     return;
   }
-  if (el.tagName === 'SELECT') {
-    if (typeof el.showPicker === 'function') {
-      try {
-        el.showPicker();
-        return;
-      } catch (err) {
-        // fallback abaixo (cicla a opção)
-      }
-    }
-    const next = (el.selectedIndex + 1) % el.options.length;
-    el.selectedIndex = next;
+  if (el.type === 'checkbox') {
+    el.checked = !el.checked;
     el.dispatchEvent(new Event('change', { bubbles: true }));
     setUiFocusIndex(index, pid);
     return;
   }
+  if (el.tagName === 'SELECT') {
+    const options = Array.from(el.options).map(opt => ({ value: opt.value, label: opt.textContent }));
+    openSelectPopup(el.options[0]?.parentElement?.label || 'Selecionar', options, value => {
+      el.value = value;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    return;
+  }
   if (el.tagName === 'BUTTON' || el.type === 'color') {
+    if (el.type === 'color' && pid) {
+      openColorPalette(el, pid);
+      return;
+    }
     el.click();
   } else {
     el.focus();
   }
 }
 
+let resultsOverlayBackCallback = null;
+
+export function setResultsOverlayBackCallback(fn) {
+  resultsOverlayBackCallback = fn;
+}
+
 export function uiBack(pid) {
+  if (refs.colorPalettePopup && !refs.colorPalettePopup.classList.contains('hidden')) {
+    closeColorPalette();
+    return;
+  }
+  if (refs.selectPopupOverlay && !refs.selectPopupOverlay.classList.contains('hidden')) {
+    closeSelectPopup();
+    return;
+  }
+  const resultsOverlay = refs.resultsOverlay && !refs.resultsOverlay.classList.contains('hidden');
+  if (resultsOverlay) {
+    hideResultsOverlay();
+    if (resultsOverlayBackCallback) resultsOverlayBackCallback();
+    return;
+  }
   const modal = document.querySelector('.modal:not(.hidden)');
   if (modal) {
     if (modal === refs.inviteModal) {
@@ -725,6 +847,11 @@ export function uiBack(pid) {
   const popup = document.querySelector('.hat-popup:not(.hidden)');
   if (popup) {
     closeHatPicker();
+    return;
+  }
+  const layoutEditor = document.getElementById('touchLayoutEditor');
+  if (layoutEditor && !layoutEditor.classList.contains('hidden')) {
+    closeLayoutEditor();
     return;
   }
   const settings = document.querySelector('.settings-panel.open');
@@ -760,6 +887,94 @@ export function showConfirm(text, onConfirm) {
 export function hideConfirm() {
   confirmCallback = null;
   refs.confirmModal.classList.add('hidden');
+}
+
+let selectPopupCallback = null;
+
+export function openSelectPopup(title, options, callback) {
+  if (!refs.selectPopupOverlay || !refs.selectPopupTitle || !refs.selectPopupOptions) return;
+  selectPopupCallback = callback;
+  refs.selectPopupTitle.textContent = title;
+  refs.selectPopupOptions.innerHTML = '';
+  options.forEach(opt => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'select-popup-option';
+    btn.textContent = opt.label;
+    btn.addEventListener('click', () => {
+      playClick();
+      closeSelectPopup();
+      if (selectPopupCallback) selectPopupCallback(opt.value);
+    });
+    refs.selectPopupOptions.appendChild(btn);
+  });
+  clearUiFocuses();
+  refs.selectPopupOverlay.classList.remove('hidden');
+}
+
+export function closeSelectPopup() {
+  selectPopupCallback = null;
+  if (refs.selectPopupOverlay) refs.selectPopupOverlay.classList.add('hidden');
+}
+
+const PALETTE_COLORS = [
+  '#ff6b6b', '#ffd23f', '#2ecc40', '#3498db', '#9b59b6', '#e91e63',
+  '#ff9f43', '#00cec9', '#fd79a8', '#6c5ce7', '#00b894', '#e17055',
+  '#d63031', '#0984e3', '#a29bfe', '#55efc4', '#ffeaa7', '#fab1a0',
+  '#ffffff', '#b2bec3', '#636e72', '#2d3436'
+];
+
+let colorPaletteTarget = null;
+
+function openColorPalette(targetEl, pid) {
+  if (!refs.colorPalettePopup || !refs.colorPaletteGrid) return;
+  colorPaletteTarget = { el: targetEl, pid };
+  refs.colorPaletteGrid.innerHTML = '';
+  PALETTE_COLORS.forEach(color => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'color-swatch';
+    btn.style.background = color;
+    if (targetEl.value.toLowerCase() === color.toLowerCase()) btn.classList.add('selected');
+    btn.title = color.toUpperCase();
+    btn.addEventListener('click', () => {
+      playClick();
+      targetEl.value = color;
+      targetEl.dispatchEvent(new Event('input', { bubbles: true }));
+      closeColorPalette();
+    });
+    refs.colorPaletteGrid.appendChild(btn);
+  });
+  clearUiFocuses();
+  refs.colorPalettePopup.classList.remove('hidden');
+}
+
+export function closeColorPalette() {
+  colorPaletteTarget = null;
+  if (refs.colorPalettePopup) refs.colorPalettePopup.classList.add('hidden');
+}
+
+if (refs.colorPaletteCancelBtn) {
+  refs.colorPaletteCancelBtn.addEventListener('click', () => {
+    closeColorPalette();
+    playClick();
+  });
+}
+if (refs.colorPalettePopup) {
+  refs.colorPalettePopup.addEventListener('click', event => {
+    if (event.target === refs.colorPalettePopup) closeColorPalette();
+  });
+}
+if (refs.selectPopupCancelBtn) {
+  refs.selectPopupCancelBtn.addEventListener('click', () => {
+    closeSelectPopup();
+    playClick();
+  });
+}
+if (refs.selectPopupOverlay) {
+  refs.selectPopupOverlay.addEventListener('click', event => {
+    if (event.target === refs.selectPopupOverlay) closeSelectPopup();
+  });
 }
 
 export function getPadConnectIndex() {
@@ -859,6 +1074,11 @@ export function getSettingsPlayer() {
   return room.players.find(player => player.id === target) || getMyPlayer();
 }
 
+function syncToAllLocalPlayers(saveFn, value) {
+  const ids = state.localPlayerIds || [];
+  for (const id of ids) saveFn(id, value);
+}
+
 export function showScreen(name) {
   state.currentScreen = name;
   clearUiFocuses();
@@ -869,6 +1089,11 @@ export function showScreen(name) {
     closeSettingsPanel();
     closeHatPicker();
   }
+  if (name !== 'game') {
+    hideResultsOverlay();
+  }
+  updateTouchVisibility();
+  updateDonateVisibility();
 }
 
 export function showNotice(element, message) {
@@ -937,11 +1162,9 @@ function buildControlAssign(player, pads, canAssign) {
         other.id !== player.id && getGamepadAssignment(other.id) === chosen
       );
       if (takenBy && (chosen >= 0 || room.mode === 'local')) {
-        if (chosen === -1) {
-          showLobbyAlert(`O teclado já está em uso por ${takenBy.nickname}.`, 'leave');
-        } else {
-          showLobbyAlert(`O Pad ${chosen + 1} já está em uso por ${takenBy.nickname}.`, 'leave');
-        }
+        const currentAssignment = getGamepadAssignment(player.id);
+        saveGamepadAssignment(takenBy.id, currentAssignment);
+        saveGamepadAssignment(player.id, chosen);
         renderLobby();
         return;
       }
@@ -989,7 +1212,6 @@ export function renderSettings() {
   refs.playerColorInput.value = player.color;
   refs.colorHexDisplay.textContent = player.color.toUpperCase();
   refs.hatBtn.textContent = `Escolher chapéu · ${getHatById(player.hat).name}`;
-  refs.autoPassCheckbox.checked = getAutoPass(player.id);
   refs.fpsToggle.checked = getFpsEnabled(player.id);
   refs.fpsColorInput.value = getFpsColor(player.id);
   refs.fpsColorHexDisplay.textContent = getFpsColor(player.id).toUpperCase();
@@ -1005,6 +1227,8 @@ export function renderSettings() {
   const sfx = getSfxVolume();
   refs.sfxVolumeInput.value = sfx;
   refs.sfxVolumeValue.textContent = String(sfx);
+  if (refs.touchEnabledCheckbox) refs.touchEnabledCheckbox.checked = getTouchEnabled();
+  if (refs.touchStyleSelect) refs.touchStyleSelect.value = getTouchStyle();
   document.querySelectorAll('.key-btn').forEach(btn => {
     const label = btn.querySelector('span');
     if (!btn.classList.contains('recording')) label.textContent = getKeyLabel(player.id, btn.dataset.action);
@@ -1074,20 +1298,33 @@ export function updateHud() {}
 export function showResultMessage(result) {
   refs.messageBox.classList.remove('hidden');
   refs.messageBox.classList.remove('victory', 'explode');
-  const winnerId = result.winnerId;
-  if (winnerId) {
+  if (result.maxScoreReached) {
+    refs.messageBox.classList.add('victory');
     refs.messageTitle.textContent = '';
     refs.messageTitle.appendChild(document.createTextNode('👑 '));
-    const winnerEntry = (result.scoreboard || []).find(entry => entry.id === winnerId);
+    const champ = result.champion;
     const nameSpan = document.createElement('span');
-    nameSpan.style.color = winnerEntry && winnerEntry.color ? winnerEntry.color : '#ffd23f';
-    nameSpan.textContent = result.winnerName || 'Jogador';
+    nameSpan.style.color = champ && champ.color ? champ.color : '#ffd23f';
+    nameSpan.textContent = champ ? champ.nickname : 'Jogador';
     refs.messageTitle.appendChild(nameSpan);
-    refs.messageTitle.appendChild(document.createTextNode(' VENCEU! 👑'));
-    refs.messageText.innerHTML = '';
+    refs.messageTitle.appendChild(document.createTextNode(' É O CAMPEÃO! 👑'));
+    refs.messageText.innerHTML = `Pontuação máxima atingida!`;
   } else {
-    refs.messageTitle.textContent = result.title || 'Fim';
-    refs.messageText.innerHTML = result.text || '';
+    const winnerId = result.winnerId;
+    if (winnerId) {
+      refs.messageTitle.textContent = '';
+      refs.messageTitle.appendChild(document.createTextNode('👑 '));
+      const winnerEntry = (result.scoreboard || []).find(entry => entry.id === winnerId);
+      const nameSpan = document.createElement('span');
+      nameSpan.style.color = winnerEntry && winnerEntry.color ? winnerEntry.color : '#ffd23f';
+      nameSpan.textContent = result.winnerName || 'Jogador';
+      refs.messageTitle.appendChild(nameSpan);
+      refs.messageTitle.appendChild(document.createTextNode(' VENCEU! 👑'));
+      refs.messageText.innerHTML = '';
+    } else {
+      refs.messageTitle.textContent = result.title || 'Fim';
+      refs.messageText.innerHTML = result.text || '';
+    }
   }
   renderScoreboard(result.scoreboard);
 }
@@ -1099,9 +1336,10 @@ function renderScoreboard(board) {
     return;
   }
   refs.scoreboard.classList.remove('hidden');
+  const sorted = [...board].sort((a, b) => (b.score || 0) - (a.score || 0));
   const places = ['1º', '2º', '3º', '4º'];
   refs.scoreboardList.innerHTML = '';
-  board.forEach((entry, index) => {
+  sorted.forEach((entry, index) => {
     const li = document.createElement('li');
     li.className = 'scoreboard-item' + (index === 0 ? ' first' : '');
     const place = document.createElement('span');
@@ -1131,11 +1369,77 @@ function renderScoreboard(board) {
 
 export function formatControls(playerId) {
   const ctrl = getEffectiveControls(playerId);
-  if (!ctrl) return 'Mover: A/D, Pular: W, Passar: Q, Dash: Shift';
+  if (!ctrl) return 'Mover: A/D, Pular: W, Dash: Shift';
   const cap = key => key.charAt(0).toUpperCase() + key.slice(1);
-  return `Mover: ${cap(ctrl.left)}/${cap(ctrl.right)}, Pular: ${cap(ctrl.jump)}, Passar: ${cap(ctrl.pass)}, Dash: ${cap(ctrl.dash)}`;
+  return `Mover: ${cap(ctrl.left)}/${cap(ctrl.right)}, Pular: ${cap(ctrl.jump)}, Dash: ${cap(ctrl.dash)}`;
 }
 
 export function formatGamepadControls() {
-  return 'Mover: Analógico, Pular: A, Passar: X, Dash: RT/LT';
+  return 'Mover: Analógico, Pular: A, Dash: RT/LT';
+}
+
+export function showResultsOverlay(result) {
+  if (!refs.resultsOverlay || !refs.resultsTitle || !refs.resultsPodium) return;
+  refs.resultsTitle.textContent = '';
+  const champ = result.champion;
+  const nameSpan = document.createElement('span');
+  nameSpan.style.color = champ && champ.color ? champ.color : '#ffd23f';
+  nameSpan.textContent = champ ? champ.nickname : 'Jogador';
+  refs.resultsTitle.appendChild(document.createTextNode('👑 '));
+  refs.resultsTitle.appendChild(nameSpan);
+  refs.resultsTitle.appendChild(document.createTextNode(' É O CAMPEÃO! 👑'));
+
+  const board = result.scoreboard || [];
+  const sorted = [...board].sort((a, b) => (b.score || 0) - (a.score || 0));
+  refs.resultsPodium.innerHTML = '';
+  sorted.forEach((entry, idx) => {
+    const placeDiv = document.createElement('div');
+    placeDiv.className = `results-place results-podium-${idx + 1}`;
+    const charWrap = document.createElement('div');
+    charWrap.className = 'results-char-wrap';
+    if (idx === 0) {
+      const crown = document.createElement('div');
+      crown.className = 'results-crown';
+      crown.textContent = '👑';
+      charWrap.appendChild(crown);
+    }
+    const charEl = document.createElement('div');
+    charEl.className = 'results-char';
+    charEl.style.background = entry.color || '#ff6b6b';
+    const canvas = document.createElement('canvas');
+    canvas.width = 96;
+    canvas.height = 96;
+    drawHatPreview(canvas.getContext('2d'), entry.hat || 'none', entry.color || '#ff6b6b');
+    charEl.appendChild(canvas);
+    charWrap.appendChild(charEl);
+    placeDiv.appendChild(charWrap);
+    const nameEl = document.createElement('div');
+    nameEl.className = 'results-name';
+    nameEl.style.color = entry.color || '#222';
+    nameEl.textContent = entry.nickname;
+    placeDiv.appendChild(nameEl);
+    const ptsEl = document.createElement('div');
+    ptsEl.className = 'results-pts';
+    ptsEl.textContent = `${entry.score} pts`;
+    placeDiv.appendChild(ptsEl);
+    refs.resultsPodium.appendChild(placeDiv);
+  });
+
+  refs.resultsButtonRow.classList.add('hidden');
+  refs.resultsOverlay.classList.remove('hidden');
+
+  setTimeout(() => {
+    refs.resultsButtonRow.classList.remove('hidden');
+    const btn = refs.resultsLobbyBtn;
+    if (btn) {
+      btn.classList.remove('results-btn-animate');
+      void btn.offsetWidth;
+      btn.classList.add('results-btn-animate');
+    }
+  }, 1000);
+}
+
+export function hideResultsOverlay() {
+  if (refs.resultsOverlay) refs.resultsOverlay.classList.add('hidden');
+  if (refs.resultsButtonRow) refs.resultsButtonRow.classList.add('hidden');
 }

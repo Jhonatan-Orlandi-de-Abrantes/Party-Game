@@ -1610,13 +1610,14 @@ export function drawHat(ctx, player, hatId) {
   }
 }
 
-export function drawHatPreview(ctx, hatId) {
+export function drawHatPreview(ctx, hatId, playerColor) {
   const w = PLAYER_WIDTH;
   const h = PLAYER_HEIGHT;
   const cx = 48;
   const playerY = 86;
   const x = cx - w / 2;
   const y = playerY - h;
+  const color = playerColor || '#ff6b6b';
 
   ctx.clearRect(0, 0, 96, 96);
 
@@ -1633,7 +1634,7 @@ export function drawHatPreview(ctx, hatId) {
   rr(ctx, x + w - 15, footY, 11, footH, 4);
   ctx.fill();
 
-  ctx.fillStyle = '#ff6b6b';
+  ctx.fillStyle = color;
   rr(ctx, x, y, w, h, 12);
   ctx.fill();
   ctx.strokeStyle = '#222';
@@ -1677,5 +1678,5 @@ export function drawHatPreview(ctx, hatId) {
   ctx.arc(cx, y + 27, 4, 0.15 * Math.PI, 0.85 * Math.PI);
   ctx.stroke();
 
-  drawHat(ctx, { x: cx, y: playerY, w, h, vx: 0, color: '#ff6b6b' }, hatId);
+  drawHat(ctx, { x: cx, y: playerY, w, h, vx: 0, color }, hatId);
 }

@@ -14,3 +14,6 @@ Make it Meme:
 
 Sitck Fight:
  - Mapas e modelo de mapas personalizados.
+
+Kahoot:
+ - Estilo de vitória do jogo, com posição do placar com os vencedores.

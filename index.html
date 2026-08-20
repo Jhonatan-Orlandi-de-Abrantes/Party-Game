@@ -110,22 +110,36 @@
           <div class="setting-group">
             <strong class="setting-title">Jogabilidade</strong>
             <div class="setting-line">
-              <label class="check-line">
-                <input type="checkbox" id="autoPassCheckbox" />
-                <span>Passar bomba automaticamente</span>
-              </label>
-            </div>
-            <div class="setting-line">
               <label>Atalhos</label>
               <div class="keys-grid">
                 <button type="button" class="key-btn" data-action="left">Esquerda: <span>A</span></button>
                 <button type="button" class="key-btn" data-action="right">Direita: <span>D</span></button>
                 <button type="button" class="key-btn" data-action="jump">Pular: <span>W</span></button>
-                <button type="button" class="key-btn" data-action="pass">Passar: <span>Q</span></button>
                 <button type="button" class="key-btn" data-action="dash">Dash: <span>Shift</span></button>
               </div>
               <button id="resetKeysBtn" class="secondary" style="margin-top:10px;">Resetar atalhos</button>
             </div>
+          </div>
+
+          <div class="setting-group">
+            <strong class="setting-title">Controles de toque (móvel)</strong>
+            <div class="setting-line">
+              <label class="check-line">
+                <input type="checkbox" id="touchEnabledCheckbox" />
+                <span>Usar botões de toque no jogo</span>
+              </label>
+            </div>
+            <div class="setting-line">
+              <label for="touchStyleSelect">Estilo dos botões de movimento</label>
+              <select id="touchStyleSelect">
+                <option value="arrows">Setas (3 setas)</option>
+                <option value="analog">Analógico (joystick)</option>
+              </select>
+            </div>
+            <div class="setting-line">
+              <button id="touchLayoutBtn" class="secondary">Editar posição dos botões</button>
+            </div>
+            <p class="setting-hint">A posição é editada visualmente: arraste e confirme.</p>
           </div>
 
           <div class="setting-group">
@@ -145,11 +159,11 @@
             </div>
             <div class="setting-line">
               <label for="fpsLimitInput">Limite de FPS: <span id="fpsLimitValue">Sem limite</span></label>
-              <input type="range" id="fpsLimitInput" min="0" max="240" step="5" value="0" />
+              <input type="range" id="fpsLimitInput" min="0" max="240" step="1" value="0" />
             </div>
             <div class="setting-line">
               <label for="resolutionInput">Resolução: <span id="resolutionValue">100%</span></label>
-              <input type="range" id="resolutionInput" min="5" max="100" step="5" value="100" />
+              <input type="range" id="resolutionInput" min="5" max="100" step="1" value="100" />
             </div>
           </div>
 
@@ -179,6 +193,7 @@
       <div id="game-area">
         <canvas id="gameCanvas" width="1080" height="540"></canvas>
         <div id="gameAlerts" class="game-alerts"></div>
+        <div id="touchControls" class="touch-controls hidden"></div>
         <div id="messageBox" class="message-box hidden">
           <h2 id="messageTitle" class="message-title">Party Game</h2>
           <p id="messageText"></p>
@@ -194,8 +209,8 @@
       <div class="hud-row">
         <div class="hud-panel">
           <strong>Controles</strong>
-          <div class="status-line" id="controlsInfo">Mover: A/D, Pular: W, Passar: Q, Dash: Shift</div>
-          <div class="status-line" id="gamepadInfo">Gamepad: Mover: Analógico, Pular: A, Passar: X, Dash: RT/LT</div>
+          <div class="status-line" id="controlsInfo">Mover: A/D, Pular: W, Dash: Shift</div>
+          <div class="status-line" id="gamepadInfo">Gamepad: Mover: Analógico, Pular: A, Dash: RT/LT</div>
         </div>
       </div>
       <button id="gameQuitBtn" class="game-quit-btn" title="Sair do jogo">✕</button>
@@ -208,6 +223,41 @@
       <div id="hatGrid" class="hat-grid"></div>
       <div class="link-row">
         <button id="hatCloseBtn" class="secondary">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="donateBox" class="donate-box" title="Faça uma doação">
+    <span class="donate-heart">♥</span>
+    <span class="donate-label">Doações!</span>
+  </div>
+
+  <div id="donateModal" class="modal hidden">
+    <div class="modal-box donate-modal-box">
+      <h3>Doações!</h3>
+      <p>Ajude a manter o jogo. Escaneie o QR Code ou copie o código PIX:</p>
+      <div class="donate-result">
+        <img src="src/Images/Pix/qrcode-pix.jpeg" alt="QR Code PIX" style="max-width:220px; width:100%; border:3px solid #222; border-radius:10px; background:#fff;" />
+        <textarea id="donatePixCode" readonly rows="3">00020101021126330014br.gov.bcb.pix0111437881558335204000053039865802BR5922JHONATAN O DE ABRANTES6009SAO PAULO62070503***63041B76</textarea>
+        <div class="link-row">
+          <button id="donateCopyBtn">Copiar código PIX</button>
+        </div>
+      </div>
+      <div class="link-row" style="margin-top:14px;">
+        <button id="donateCloseBtn" class="secondary">Fechar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="touchLayoutEditor" class="touch-layout-editor hidden">
+    <div class="touch-layout-box">
+      <h3>Editar posição dos botões</h3>
+      <p>Arraste os botões para onde quiser e clique em Confirmar.</p>
+      <div id="touchLayoutStage" class="touch-layout-stage"></div>
+      <div class="link-row">
+        <button id="touchLayoutConfirmBtn">Confirmar</button>
+        <button id="touchLayoutResetBtn" class="secondary">Resetar</button>
+        <button id="touchLayoutCloseBtn" class="secondary">Cancelar</button>
       </div>
     </div>
   </div>
@@ -225,6 +275,16 @@
       <div class="link-row">
         <button id="confirmOkBtn">Confirmar</button>
         <button id="confirmCancelBtn" class="secondary">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="resultsOverlay" class="results-overlay hidden">
+    <div class="results-box">
+      <h2 id="resultsTitle" class="results-title"></h2>
+      <div id="resultsPodium" class="results-podium"></div>
+      <div id="resultsButtonRow" class="link-row results-button-row hidden">
+        <button id="resultsLobbyBtn">Voltar ao lobby</button>
       </div>
     </div>
   </div>
@@ -261,6 +321,26 @@
       <div class="notice" id="padModalNotice"></div>
       <div class="link-row">
         <button id="padModalCancelBtn" class="secondary">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="selectPopupOverlay" class="modal hidden">
+    <div class="modal-box">
+      <h3 id="selectPopupTitle"></h3>
+      <div id="selectPopupOptions"></div>
+      <div class="link-row" style="margin-top:14px;">
+        <button id="selectPopupCancelBtn" class="secondary">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="colorPalettePopup" class="modal hidden">
+    <div class="modal-box">
+      <h3>Escolher cor</h3>
+      <div id="colorPaletteGrid" class="color-palette-grid"></div>
+      <div class="link-row" style="margin-top:14px;">
+        <button id="colorPaletteCancelBtn" class="secondary">Cancelar</button>
       </div>
     </div>
   </div>

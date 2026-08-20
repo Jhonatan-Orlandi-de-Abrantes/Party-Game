@@ -3,6 +3,13 @@ import { writePlayerInput, readPlayerInput, getGamepadAssignment, getCustomKeys 
 
 const AXIS_DEADZONE = 0.4;
 
+const touchKeys = { left: false, right: false, jump: false, dash: false };
+
+export function setTouchInput(action, active) {
+  if (!(action in touchKeys)) return;
+  touchKeys[action] = !!active;
+}
+
 export function getEffectiveControls(playerId) {
   const base = getControlsForPlayer(playerId);
   if (!base) return null;
@@ -12,7 +19,6 @@ export function getEffectiveControls(playerId) {
     left: custom.left || base.left,
     right: custom.right || base.right,
     jump: custom.jump || base.jump,
-    pass: custom.pass || base.pass,
     dash: custom.dash || base.dash
   };
 }
@@ -28,7 +34,6 @@ function readGamepad(index) {
       left: axis(0) < -AXIS_DEADZONE || btn(14),
       right: axis(0) > AXIS_DEADZONE || btn(15),
       jump: btn(0) || btn(12),
-      pass: btn(2) || btn(3),
       dash: btn(7) || btn(1) || btn(6)
     };
   } catch (error) {
@@ -61,7 +66,6 @@ export function publishPlayerInput(playerId, includeKeyboard) {
     left: includeKeyboard && !!state.keysPressed[ctrl.left.toLowerCase()],
     right: includeKeyboard && !!state.keysPressed[ctrl.right.toLowerCase()],
     jump: includeKeyboard && !!state.keysPressed[ctrl.jump.toLowerCase()],
-    pass: includeKeyboard && !!state.keysPressed[ctrl.pass.toLowerCase()],
     dash: includeKeyboard && !!state.keysPressed[ctrl.dash.toLowerCase()]
   };
   const gp = readGamepad(getGamepadAssignment(playerId));
@@ -69,8 +73,13 @@ export function publishPlayerInput(playerId, includeKeyboard) {
     keys.left = keys.left || gp.left;
     keys.right = keys.right || gp.right;
     keys.jump = keys.jump || gp.jump;
-    keys.pass = keys.pass || gp.pass;
     keys.dash = keys.dash || gp.dash;
+  }
+  if (playerId === state.myPlayerId) {
+    keys.left = keys.left || touchKeys.left;
+    keys.right = keys.right || touchKeys.right;
+    keys.jump = keys.jump || touchKeys.jump;
+    keys.dash = keys.dash || touchKeys.dash;
   }
   const data = JSON.stringify({ roomCode: state.myRoomCode, playerId, keys, t: Date.now() });
   if (lastPublishedByPlayer.get(playerId) === data) return;
@@ -90,7 +99,7 @@ export function publishLocalInputs() {
 }
 
 export function getPlayerKeys(player) {
-  const noInput = { left: false, right: false, jump: false, pass: false, dash: false };
+  const noInput = { left: false, right: false, jump: false, dash: false };
   if (!player.alive) return noInput;
   try {
     const raw = readPlayerInput(player.id);

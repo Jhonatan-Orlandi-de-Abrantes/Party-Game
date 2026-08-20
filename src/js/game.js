@@ -1,11 +1,13 @@
 import { state } from './state.js';
 import { getPlayerKeys } from './input.js';
-import { publishGameState, getAutoPass, saveRooms } from './storage.js';
+import { publishGameState, saveRooms } from './storage.js';
 import { setStarted } from './rooms.js';
 import { playSound, playPop } from './audio.js';
+import { MAPS } from './maps.js';
 import {
   controlSets,
   MAX_BOMB_TIME,
+  MAX_SCORE,
   DASH_COOLDOWN,
   PLAYER_WIDTH,
   PLAYER_HEIGHT,
@@ -29,6 +31,7 @@ const TRAIL_GAP = 6;
 const lastTrailPoints = new Map();
 
 let onRoundEnd = null;
+const usedMaps = new Set();
 
 export function setOnRoundEnd(fn) {
   onRoundEnd = fn;
@@ -57,19 +60,34 @@ export function initGame() {
       controls: controlSets[index] || controlSets[0]
     };
   });
-  const firstHolder = Math.floor(Math.random() * players.length);
+  let firstHolder;
+  if (state.lastBombHolder) {
+    const candidates = players.filter(p => p.id !== state.lastBombHolder);
+    firstHolder = candidates.length > 0
+      ? players.indexOf(candidates[Math.floor(Math.random() * candidates.length)])
+      : Math.floor(Math.random() * players.length);
+  } else {
+    firstHolder = Math.floor(Math.random() * players.length);
+  }
   players[firstHolder].hasBomb = true;
   players[firstHolder].lastPasser = players[firstHolder].id;
   lastTrailPoints.clear();
+  let mapIndex;
+  if (usedMaps.size >= MAPS.length) {
+    usedMaps.clear();
+  }
+  const available = [];
+  for (let i = 0; i < MAPS.length; i++) {
+    if (!usedMaps.has(i)) available.push(i);
+  }
+  mapIndex = available[Math.floor(Math.random() * available.length)];
+  usedMaps.add(mapIndex);
+  const chosenMap = MAPS[mapIndex];
   state.gameState = {
     players,
     trails: [],
-    platforms: [
-      { x: 0, y: 500, width: 1080, height: 40 },
-      { x: 120, y: 390, width: 320, height: 24 },
-      { x: 640, y: 300, width: 300, height: 24 },
-      { x: 360, y: 220, width: 260, height: 24 }
-    ],
+    platforms: chosenMap.platforms,
+    map: { name: chosenMap.name, bg: chosenMap.bg, platformColors: chosenMap.platformColors },
     bombOwnerId: players[firstHolder].id,
     bombTime: MAX_BOMB_TIME,
     time: 0,
@@ -220,9 +238,6 @@ function collidePlayers() {
   const gs = state.gameState;
   gs.players.forEach(player => {
     if (!player.alive || !player.hasBomb) return;
-    const keys = getPlayerKeys(player);
-    const auto = getAutoPass(player.id);
-    if (!keys.pass && !auto) return;
     if (player.passCooldown > 0) return;
     gs.players.forEach(target => {
       if (target.id === player.id || !target.alive) return;
@@ -254,6 +269,7 @@ function endRound(explodedPlayer) {
   spawnExplosion(explodedPlayer);
   const loser = explodedPlayer.nickname;
   const winnerId = explodedPlayer.lastPasser;
+  state.lastBombHolder = explodedPlayer.id;
   const winnerPlayer = gs.players.find(player => player.id === winnerId && player.alive) || gs.players.find(player => player.alive);
   const winnerName = winnerPlayer ? winnerPlayer.nickname : 'Ninguém';
   gs.pendingResult = {
@@ -309,13 +325,27 @@ function awardRoundPoints(result) {
     player.score = (player.score || 0) + (n - position);
   });
   saveRooms();
-  result.scoreboard = ranked.map((player, position) => ({
-    id: player.id,
-    nickname: player.nickname,
-    color: player.color,
-    score: player.score,
-    place: position + 1
-  }));
+  result.scoreboard = ranked.map((player, position) => {
+    const roomPlayer = room.players.find(p => p.id === player.id);
+    return {
+      id: player.id,
+      nickname: player.nickname,
+      color: player.color,
+      score: player.score,
+      place: position + 1,
+      hat: player.hat || (roomPlayer ? roomPlayer.hat : 'none')
+    };
+  });
+  const champion = ranked.find(player => player.score >= MAX_SCORE);
+  if (champion) {
+    result.maxScoreReached = true;
+    result.champion = {
+      id: champion.id,
+      nickname: champion.nickname,
+      color: champion.color,
+      score: champion.score
+    };
+  }
 }
 
 function spawnExplosion(player) {

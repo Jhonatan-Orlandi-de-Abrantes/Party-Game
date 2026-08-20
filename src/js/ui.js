@@ -30,10 +30,25 @@ import { HATS, getHatById, drawHatPreview } from './hats.js';
 import { openLayoutEditor, closeLayoutEditor, updateTouchVisibility } from './touch.js';
 import { updateDonateVisibility } from './donate.js';
 import {
+  getAllCosmetics,
+  getCosmeticById,
+  equipCosmetic,
+  unequipCosmetic,
+  isEquipped,
+  getEquippedList,
+  removeCosmetic,
+  processImageFile,
+  createCosmeticImage,
+  createCosmeticCode,
+  updateCosmetic,
+  drawCosmeticPreview
+} from './cosmetics.js';
+import {
   saveTouchEnabled,
   getTouchEnabled,
   saveTouchStyle,
-  getTouchStyle
+  getTouchStyle,
+  saveEquippedCosmetics
 } from './storage.js';
 
 const $ = (id) => document.getElementById(id);
@@ -126,7 +141,27 @@ export const refs = {
   selectPopupCancelBtn: $('selectPopupCancelBtn'),
   colorPalettePopup: $('colorPalettePopup'),
   colorPaletteGrid: $('colorPaletteGrid'),
-  colorPaletteCancelBtn: $('colorPaletteCancelBtn')
+  colorPaletteCancelBtn: $('colorPaletteCancelBtn'),
+  openCosmeticsEditorBtn: $('openCosmeticsEditorBtn'),
+  cosmeticsModal: $('cosmeticsModal'),
+  cosmeticsList: $('cosmeticsList'),
+  cosmeticsCreateImgBtn: $('cosmeticsCreateImgBtn'),
+  cosmeticsCreateCodeBtn: $('cosmeticsCreateCodeBtn'),
+  cosmeticsFileInput: $('cosmeticsFileInput'),
+  cosmeticsModalCloseBtn: $('cosmeticsModalCloseBtn'),
+  cosmeticsPositionModal: $('cosmeticsPositionModal'),
+  cosmeticsPositionCanvas: $('cosmeticsPositionCanvas'),
+  cosmeticsScaleInput: $('cosmeticsScaleInput'),
+  cosmeticsScaleValue: $('cosmeticsScaleValue'),
+  cosmeticsPositionSaveBtn: $('cosmeticsPositionSaveBtn'),
+  cosmeticsPositionCancelBtn: $('cosmeticsPositionCancelBtn'),
+  cosmeticsCodeModal: $('cosmeticsCodeModal'),
+  cosmeticsCodeInput: $('cosmeticsCodeInput'),
+  cosmeticsCodePreviewCanvas: $('cosmeticsCodePreviewCanvas'),
+  cosmeticsCodeSaveBtn: $('cosmeticsCodeSaveBtn'),
+  cosmeticsCodeCancelBtn: $('cosmeticsCodeCancelBtn'),
+  cosmeticsCodeImportBtn: $('cosmeticsCodeImportBtn'),
+  cosmeticsJsFileInput: $('cosmeticsJsFileInput')
 };
 
 let confirmCallback = null;
@@ -298,6 +333,50 @@ export function initUi() {
     saveCustomKeys(player.id, custom);
     cancelRebind();
     renderLobby();
+  });
+
+  refs.openCosmeticsEditorBtn.addEventListener('click', () => {
+    openCosmeticsModal();
+    playClick();
+  });
+  refs.cosmeticsModalCloseBtn.addEventListener('click', () => {
+    closeCosmeticsModal();
+    playClick();
+  });
+  refs.cosmeticsCreateImgBtn.addEventListener('click', () => {
+    refs.cosmeticsFileInput.click();
+    playClick();
+  });
+  refs.cosmeticsFileInput.addEventListener('change', handleCosmeticsFileUpload);
+  refs.cosmeticsCreateCodeBtn.addEventListener('click', () => {
+    openCosmeticsCodeModal();
+    playClick();
+  });
+  refs.cosmeticsJsFileInput.addEventListener('change', handleCosmeticsJsFileUpload);
+  refs.cosmeticsPositionSaveBtn.addEventListener('click', () => {
+    saveCosmeticsPosition();
+    playClick();
+  });
+  refs.cosmeticsPositionCancelBtn.addEventListener('click', () => {
+    closeCosmeticsPositionModal();
+    playClick();
+  });
+  refs.cosmeticsCodeSaveBtn.addEventListener('click', () => {
+    saveCosmeticsCode();
+    playClick();
+  });
+  refs.cosmeticsCodeCancelBtn.addEventListener('click', () => {
+    closeCosmeticsCodeModal();
+    playClick();
+  });
+  refs.cosmeticsCodeImportBtn.addEventListener('click', () => {
+    refs.cosmeticsJsFileInput.click();
+    playClick();
+  });
+  refs.cosmeticsScaleInput.addEventListener('input', () => {
+    const val = Number(refs.cosmeticsScaleInput.value) / 10;
+    refs.cosmeticsScaleValue.textContent = val.toFixed(1);
+    renderCosmeticsPositionPreview();
   });
 
   // As medidas de localização das partes do personagem (CHARACTER_REGIONS)
@@ -546,7 +625,8 @@ export function getFocusables() {
       return true;
     });
   }
-  const modal = document.querySelector('.modal:not(.hidden)');
+  const modals = document.querySelectorAll('.modal:not(.hidden)');
+  const modal = modals.length > 0 ? modals[modals.length - 1] : null;
   const popup = document.querySelector('.hat-popup:not(.hidden)');
   const screen = document.querySelector('.screen:not(.hidden)');
   let scope = screen;
@@ -659,6 +739,11 @@ export function moveUiFocus(dx, dy, pid, isAnalog) {
   }
   const target = list[index];
 
+  if (target.closest && target.closest('#cosmeticsModal')) {
+    moveCosmeticsModalFocus(target, dx, dy, pid, list, index);
+    return;
+  }
+
   if (target.classList.contains('hat-option')) {
     moveHatGridFocus(list, dx, dy, pid);
     return;
@@ -683,6 +768,101 @@ export function moveUiFocus(dx, dy, pid, isAnalog) {
     target.dispatchEvent(new Event('input', { bubbles: true }));
     return;
   }
+  const dir = dy !== 0 ? dy : dx;
+  setUiFocusIndex(index + dir, pid);
+}
+
+function moveCosmeticsModalFocus(target, dx, dy, pid, list, index) {
+  const cosmeticBoxes = Array.from(refs.cosmeticsList.querySelectorAll('.hat-option'));
+  const renameBtns = cosmeticBoxes.map(b => b.querySelector('.cosmetics-item-actions button.secondary'));
+  const deleteBtns = cosmeticBoxes.map(b => b.querySelector('.cosmetics-item-actions button.danger'));
+
+  const boxIdx = cosmeticBoxes.indexOf(target);
+  if (boxIdx >= 0) {
+    if (dy > 0) {
+      const idx = renameBtns[boxIdx] ? list.indexOf(renameBtns[boxIdx]) : -1;
+      if (idx >= 0) setUiFocusIndex(idx, pid);
+    } else if (dy < 0 && boxIdx === 0) {
+      const idx = list.indexOf(refs.cosmeticsCreateImgBtn);
+      if (idx >= 0) setUiFocusIndex(idx, pid);
+    } else if (dx !== 0) {
+      const next = boxIdx + dx;
+      if (next >= 0 && next < cosmeticBoxes.length) {
+        const idx = list.indexOf(cosmeticBoxes[next]);
+        if (idx >= 0) setUiFocusIndex(idx, pid);
+      } else if (next >= cosmeticBoxes.length) {
+        const idx = list.indexOf(refs.cosmeticsModalCloseBtn);
+        if (idx >= 0) setUiFocusIndex(idx, pid);
+      }
+    }
+    return;
+  }
+
+  const rIdx = renameBtns.indexOf(target);
+  if (rIdx >= 0) {
+    if (dy < 0) {
+      const idx = list.indexOf(cosmeticBoxes[rIdx]);
+      if (idx >= 0) setUiFocusIndex(idx, pid);
+    } else if (dx > 0 && deleteBtns[rIdx]) {
+      const idx = list.indexOf(deleteBtns[rIdx]);
+      if (idx >= 0) setUiFocusIndex(idx, pid);
+    } else if (dx < 0) {
+      const idx = list.indexOf(cosmeticBoxes[rIdx]);
+      if (idx >= 0) setUiFocusIndex(idx, pid);
+    }
+    return;
+  }
+
+  const dIdx = deleteBtns.indexOf(target);
+  if (dIdx >= 0) {
+    if (dy < 0) {
+      const idx = list.indexOf(cosmeticBoxes[dIdx]);
+      if (idx >= 0) setUiFocusIndex(idx, pid);
+    } else if (dx > 0) {
+      const nextBox = dIdx + 1;
+      if (nextBox < cosmeticBoxes.length) {
+        const idx = list.indexOf(cosmeticBoxes[nextBox]);
+        if (idx >= 0) setUiFocusIndex(idx, pid);
+      } else {
+        const idx = list.indexOf(refs.cosmeticsModalCloseBtn);
+        if (idx >= 0) setUiFocusIndex(idx, pid);
+      }
+    } else if (dx < 0) {
+      const idx = list.indexOf(renameBtns[dIdx]);
+      if (idx >= 0) setUiFocusIndex(idx, pid);
+    }
+    return;
+  }
+
+  if (target === refs.cosmeticsCreateImgBtn) {
+    if (dx > 0) {
+      const idx = list.indexOf(refs.cosmeticsCreateCodeBtn);
+      if (idx >= 0) setUiFocusIndex(idx, pid);
+    } else if (dy > 0 && cosmeticBoxes.length > 0) {
+      const idx = list.indexOf(cosmeticBoxes[0]);
+      if (idx >= 0) setUiFocusIndex(idx, pid);
+    }
+    return;
+  }
+  if (target === refs.cosmeticsCreateCodeBtn) {
+    if (dx < 0) {
+      const idx = list.indexOf(refs.cosmeticsCreateImgBtn);
+      if (idx >= 0) setUiFocusIndex(idx, pid);
+    } else if (dy > 0 && cosmeticBoxes.length > 0) {
+      const idx = list.indexOf(cosmeticBoxes[0]);
+      if (idx >= 0) setUiFocusIndex(idx, pid);
+    }
+    return;
+  }
+
+  if (target === refs.cosmeticsModalCloseBtn) {
+    if (dy < 0 && cosmeticBoxes.length > 0) {
+      const idx = list.indexOf(cosmeticBoxes[0]);
+      if (idx >= 0) setUiFocusIndex(idx, pid);
+    }
+    return;
+  }
+
   const dir = dy !== 0 ? dy : dx;
   setUiFocusIndex(index + dir, pid);
 }
@@ -797,10 +977,34 @@ export function activateUiFocus(pid) {
     });
     return;
   }
-  if (el.tagName === 'BUTTON' || el.type === 'color') {
+  if (el.tagName === 'BUTTON' || el.type === 'color' || el.classList.contains('hat-option')) {
     if (el.type === 'color' && pid) {
       openColorPalette(el, pid);
       return;
+    }
+    if (el.classList.contains('hat-option') && el.closest('#cosmeticsModal')) {
+      const cosmeticId = el.dataset.cosmeticId;
+      if (cosmeticId) {
+        const cosmetic = getAllCosmetics().find(c => c.id === cosmeticId);
+        if (cosmetic) {
+          const now = Date.now();
+          const last = cosmeticsLastActivateId === cosmeticId ? cosmeticsLastActivateTime : 0;
+          cosmeticsLastActivateId = cosmeticId;
+          cosmeticsLastActivateTime = now;
+          if (now - last < 350) {
+            openCosmeticsPositionModal(cosmetic);
+          } else {
+            if (isEquipped(cosmetic.id)) {
+              unequipCosmetic(cosmetic.id);
+            } else {
+              equipCosmetic(cosmetic.id, 0, 0, 1);
+            }
+            updatePlayerCosmeticsInRoom();
+            renderCosmeticsList();
+          }
+          return;
+        }
+      }
     }
     el.click();
   } else {
@@ -829,14 +1033,23 @@ export function uiBack(pid) {
     if (resultsOverlayBackCallback) resultsOverlayBackCallback();
     return;
   }
-  const modal = document.querySelector('.modal:not(.hidden)');
+  const allModals = document.querySelectorAll('.modal:not(.hidden)');
+  const modal = allModals.length > 0 ? allModals[allModals.length - 1] : null;
   if (modal) {
     if (modal === refs.inviteModal) {
       closeInviteModal();
     } else if (modal === refs.padModal) {
       hidePadConnect();
-    } else {
+    } else if (modal === refs.cosmeticsPositionModal) {
+      closeCosmeticsPositionModal();
+    } else if (modal === refs.cosmeticsCodeModal) {
+      closeCosmeticsCodeModal();
+    } else if (modal === refs.cosmeticsModal) {
+      closeCosmeticsModal();
+    } else if (modal === refs.confirmModal) {
       refs.confirmCancelBtn.click();
+    } else {
+      modal.classList.add('hidden');
     }
     return;
   }
@@ -1211,7 +1424,7 @@ export function renderSettings() {
   }
   refs.playerColorInput.value = player.color;
   refs.colorHexDisplay.textContent = player.color.toUpperCase();
-  refs.hatBtn.textContent = `Escolher chapéu · ${getHatById(player.hat).name}`;
+  refs.hatBtn.textContent = `Escolher Cosmético · ${getHatById(player.hat).name}`;
   refs.fpsToggle.checked = getFpsEnabled(player.id);
   refs.fpsColorInput.value = getFpsColor(player.id);
   refs.fpsColorHexDisplay.textContent = getFpsColor(player.id).toUpperCase();
@@ -1442,4 +1655,381 @@ export function showResultsOverlay(result) {
 export function hideResultsOverlay() {
   if (refs.resultsOverlay) refs.resultsOverlay.classList.add('hidden');
   if (refs.resultsButtonRow) refs.resultsButtonRow.classList.add('hidden');
+}
+
+let cosmeticsPositionTarget = null;
+let cosmeticsPositionDragging = false;
+let cosmeticsPositionDragStart = { x: 0, y: 0 };
+let cosmeticsPositionOffsetStart = { x: 0, y: 0 };
+let cosmeticsLastActivateId = null;
+let cosmeticsLastActivateTime = 0;
+
+export function pollCosmeticsPositionStick(axes2, axes3) {
+  if (!cosmeticsPositionTarget) return;
+  const deadzone = 0.15;
+  const speed = 2.8;
+  const dx = Math.abs(axes2) > deadzone ? axes2 * speed : 0;
+  const dy = Math.abs(axes3) > deadzone ? axes3 * speed : 0;
+  if (dx === 0 && dy === 0) return;
+  cosmeticsPositionTarget.offsetX = (cosmeticsPositionTarget.offsetX || 0) + dx;
+  cosmeticsPositionTarget.offsetY = (cosmeticsPositionTarget.offsetY || 0) + dy;
+  renderCosmeticsPositionPreview();
+}
+
+function openCosmeticsModal() {
+  refs.cosmeticsModal.classList.remove('hidden');
+  renderCosmeticsList();
+  const firstBox = refs.cosmeticsList.querySelector('.hat-option');
+  if (firstBox) {
+    const list = getFocusables();
+    const idx = list.indexOf(firstBox);
+    if (idx >= 0) {
+      const pid = state.uiPadPlayerId || state.myPlayerId;
+      setUiFocusIndex(idx, pid);
+    }
+  }
+}
+
+function closeCosmeticsModal() {
+  refs.cosmeticsModal.classList.add('hidden');
+}
+
+function renderCosmeticsList() {
+  const all = getAllCosmetics();
+  refs.cosmeticsList.innerHTML = '';
+  if (all.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'setting-hint';
+    empty.textContent = 'Nenhum cosmético criado. Crie um acima!';
+    refs.cosmeticsList.appendChild(empty);
+    return;
+  }
+  const me = getSettingsPlayer();
+  const playerColor = me ? me.color : '#ff6b6b';
+  all.forEach(cosmetic => {
+    const box = document.createElement('div');
+    box.tabIndex = 0;
+    box.dataset.cosmeticId = cosmetic.id;
+    const equipped = isEquipped(cosmetic.id);
+    box.className = 'hat-option' + (equipped ? ' selected' : '');
+    box.title = cosmetic.name;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 96;
+    canvas.height = 96;
+    drawCosmeticPreview(canvas.getContext('2d'), cosmetic, playerColor);
+
+    const label = document.createElement('span');
+    label.className = 'hat-option-name';
+    label.textContent = cosmetic.name;
+
+    box.appendChild(canvas);
+    box.appendChild(label);
+
+    const actionsRow = document.createElement('div');
+    actionsRow.className = 'cosmetics-item-actions';
+
+    const renameBtn = document.createElement('button');
+    renameBtn.type = 'button';
+    renameBtn.className = 'secondary';
+    renameBtn.textContent = 'Renomear';
+    renameBtn.title = 'Renomear';
+    renameBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const newName = prompt('Novo nome para o cosmético:', cosmetic.name);
+      if (newName && newName.trim()) {
+        updateCosmetic(cosmetic.id, { name: newName.trim() });
+        renderCosmeticsList();
+      }
+    });
+    actionsRow.appendChild(renameBtn);
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.className = 'danger';
+    deleteBtn.textContent = '\u2715';
+    deleteBtn.title = 'Excluir';
+    deleteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const typeLabel = cosmetic.type === 'image' ? 'imagem' : 'código';
+      showConfirm(`Tem certeza que deseja excluir o cosmético "${cosmetic.name}" (${typeLabel})?`, () => {
+        unequipCosmetic(cosmetic.id);
+        removeCosmetic(cosmetic.id);
+        updatePlayerCosmeticsInRoom();
+        renderCosmeticsList();
+      });
+    });
+    actionsRow.appendChild(deleteBtn);
+
+    box.appendChild(actionsRow);
+
+    let clickTimer = null;
+    box.addEventListener('click', () => {
+      if (clickTimer) {
+        clearTimeout(clickTimer);
+        clickTimer = null;
+        openCosmeticsPositionModal(cosmetic);
+      } else {
+        clickTimer = setTimeout(() => {
+          clickTimer = null;
+          if (isEquipped(cosmetic.id)) {
+            unequipCosmetic(cosmetic.id);
+            updatePlayerCosmeticsInRoom();
+          } else {
+            equipCosmetic(cosmetic.id, 0, 0, 1);
+            updatePlayerCosmeticsInRoom();
+          }
+          renderCosmeticsList();
+        }, 250);
+      }
+      playClick();
+    });
+
+    refs.cosmeticsList.appendChild(box);
+  });
+}
+
+function updatePlayerCosmeticsInRoom() {
+  const equipped = getEquippedList();
+  const room = state.currentRoom;
+  if (!room) return;
+  for (const player of room.players) {
+    if (state.localPlayerIds.includes(player.id) || player.id === state.myPlayerId) {
+      player.cosmetics = equipped;
+    }
+  }
+  saveRooms();
+}
+
+async function handleCosmeticsFileUpload(event) {
+  const file = event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  try {
+    const dataUrl = await processImageFile(file);
+    const name = file.name.replace(/\.[^.]+$/, '') || 'Imagem';
+    const cosmetic = createCosmeticImage(name, dataUrl);
+    equipCosmetic(cosmetic.id, 0, 0, 1);
+    updatePlayerCosmeticsInRoom();
+    renderCosmeticsList();
+    openCosmeticsPositionModal(cosmetic);
+  } catch (e) {
+    showNotice(refs.cosmeticsList, e.message);
+  }
+}
+
+function handleCosmeticsJsFileUpload(event) {
+  const file = event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const code = reader.result;
+    const name = file.name.replace(/\.[^.]+$/, '') || 'Código';
+    openCosmeticsCodeModal(null, code, name);
+  };
+  reader.readAsText(file);
+}
+
+function openCosmeticsPositionModal(cosmetic) {
+  cosmeticsPositionTarget = cosmetic;
+  refs.cosmeticsPositionModal.classList.remove('hidden');
+  refs.cosmeticsScaleInput.value = Math.round((cosmetic.scale || 1) * 10);
+  refs.cosmeticsScaleValue.textContent = (cosmetic.scale || 1).toFixed(1);
+  renderCosmeticsPositionPreview();
+  setupPositionDrag();
+}
+
+function closeCosmeticsPositionModal() {
+  refs.cosmeticsPositionModal.classList.add('hidden');
+  cosmeticsPositionTarget = null;
+}
+
+function saveCosmeticsPosition() {
+  if (!cosmeticsPositionTarget) return;
+  const scale = Number(refs.cosmeticsScaleInput.value) / 10;
+  const equipped = getEquippedList();
+  const entry = equipped.find(e => e.id === cosmeticsPositionTarget.id);
+  if (entry) {
+    entry.offsetX = cosmeticsPositionTarget.offsetX || 0;
+    entry.offsetY = cosmeticsPositionTarget.offsetY || 0;
+    entry.scale = scale;
+    saveEquippedCosmetics(equipped);
+  }
+  updatePlayerCosmeticsInRoom();
+  closeCosmeticsPositionModal();
+  renderCosmeticsList();
+}
+
+function renderCosmeticsPositionPreview() {
+  const canvas = refs.cosmeticsPositionCanvas;
+  const ctx = canvas.getContext('2d');
+  const cosmetic = cosmeticsPositionTarget;
+  if (!cosmetic) return;
+
+  const scale = Number(refs.cosmeticsScaleInput.value) / 10;
+  const preview = {
+    ...cosmetic,
+    offsetX: cosmetic.offsetX || 0,
+    offsetY: cosmetic.offsetY || 0,
+    scale
+  };
+
+  drawCosmeticPreview(ctx, preview, '#ff6b6b', 0, 192);
+}
+
+function setupPositionDrag() {
+  const canvas = refs.cosmeticsPositionCanvas;
+
+  const getPos = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return {
+      x: (clientX - rect.left) * scaleX,
+      y: (clientY - rect.top) * scaleY
+    };
+  };
+
+  const onDown = (e) => {
+    if (!cosmeticsPositionTarget) return;
+    e.preventDefault();
+    cosmeticsPositionDragging = true;
+    const pos = getPos(e);
+    cosmeticsPositionDragStart = pos;
+    cosmeticsPositionOffsetStart = {
+      x: cosmeticsPositionTarget.offsetX || 0,
+      y: cosmeticsPositionTarget.offsetY || 0
+    };
+  };
+
+  const onMove = (e) => {
+    if (!cosmeticsPositionDragging || !cosmeticsPositionTarget) return;
+    e.preventDefault();
+    const pos = getPos(e);
+    const dx = (pos.x - cosmeticsPositionDragStart.x) * 0.5;
+    const dy = (pos.y - cosmeticsPositionDragStart.y) * 0.5;
+    cosmeticsPositionTarget.offsetX = cosmeticsPositionOffsetStart.x + dx;
+    cosmeticsPositionTarget.offsetY = cosmeticsPositionOffsetStart.y + dy;
+    renderCosmeticsPositionPreview();
+  };
+
+  const onUp = () => {
+    cosmeticsPositionDragging = false;
+  };
+
+  canvas.removeEventListener('mousedown', canvas._cosDown);
+  canvas.removeEventListener('mousemove', canvas._cosMove);
+  canvas.removeEventListener('mouseup', canvas._cosUp);
+  canvas.removeEventListener('touchstart', canvas._cosTouchDown);
+  canvas.removeEventListener('touchmove', canvas._cosTouchMove);
+  canvas.removeEventListener('touchend', canvas._cosUp);
+
+  canvas._cosDown = onDown;
+  canvas._cosMove = onMove;
+  canvas._cosUp = onUp;
+  canvas._cosTouchDown = (e) => { e.preventDefault(); onDown(e); };
+  canvas._cosTouchMove = (e) => { e.preventDefault(); onMove(e); };
+
+  canvas.addEventListener('mousedown', onDown);
+  canvas.addEventListener('mousemove', onMove);
+  canvas.addEventListener('mouseup', onUp);
+  canvas.addEventListener('touchstart', canvas._cosTouchDown, { passive: false });
+  canvas.addEventListener('touchmove', canvas._cosTouchMove, { passive: false });
+  canvas.addEventListener('touchend', onUp);
+}
+
+let editingCosmeticId = null;
+let editingCosmeticName = null;
+
+function openCosmeticsCodeModal(cosmetic, importedCode, importedName) {
+  editingCosmeticId = cosmetic ? cosmetic.id : null;
+  editingCosmeticName = importedName || null;
+  refs.cosmeticsCodeModal.classList.remove('hidden');
+  refs.cosmeticsCodeInput.value = cosmetic ? cosmetic.code : (importedCode || '');
+  renderCosmeticsCodePreview();
+}
+
+function closeCosmeticsCodeModal() {
+  refs.cosmeticsCodeModal.classList.add('hidden');
+  editingCosmeticId = null;
+}
+
+function saveCosmeticsCode() {
+  const code = refs.cosmeticsCodeInput.value.trim();
+  if (!code) {
+    showNotice(refs.cosmeticsCodeInput, 'Código não pode estar vazio.');
+    return;
+  }
+  if (editingCosmeticId) {
+    updateCosmetic(editingCosmeticId, { code });
+  } else {
+    const name = editingCosmeticName || `Código ${getAllCosmetics().length + 1}`;
+    const cosmetic = createCosmeticCode(name, code);
+    equipCosmetic(cosmetic.id, 0, 0, 1);
+    updatePlayerCosmeticsInRoom();
+  }
+  editingCosmeticName = null;
+  closeCosmeticsCodeModal();
+  renderCosmeticsList();
+}
+
+function renderCosmeticsCodePreview() {
+  const canvas = refs.cosmeticsCodePreviewCanvas;
+  const ctx = canvas.getContext('2d');
+  const code = refs.cosmeticsCodeInput.value;
+  ctx.clearRect(0, 0, 96, 96);
+
+  const w = PLAYER_WIDTH;
+  const h = PLAYER_HEIGHT;
+  const cx = 48;
+  const py = 86;
+  const x = cx - w / 2;
+  const y = py - h;
+
+  ctx.fillStyle = 'rgba(0,0,0,0.16)';
+  ctx.beginPath();
+  ctx.ellipse(cx, py + 3, w * 0.55, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#222';
+  ctx.beginPath();
+  ctx.moveTo(x + 8, y + h - 4);
+  ctx.arcTo(x + 15, y + h - 4, x + 15, y + h + 5, 4);
+  ctx.arcTo(x + 15, y + h + 5, x + 4, y + h + 5, 4);
+  ctx.arcTo(x + 4, y + h + 5, x + 4, y + h - 4, 4);
+  ctx.arcTo(x + 4, y + h - 4, x + 8, y + h - 4, 4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x + w - 11, y + h - 4);
+  ctx.arcTo(x + w - 4, y + h - 4, x + w - 4, y + h + 5, 4);
+  ctx.arcTo(x + w - 4, y + h + 5, x + w - 15, y + h + 5, 4);
+  ctx.arcTo(x + w - 15, y + h + 5, x + w - 15, y + h - 4, 4);
+  ctx.arcTo(x + w - 15, y + h - 4, x + w - 11, y + h - 4, 4);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#ff6b6b';
+  ctx.beginPath();
+  ctx.moveTo(x + 12, y);
+  ctx.arcTo(x + w, y, x + w, y + h, 12);
+  ctx.arcTo(x + w, y + h, x, y + h, 12);
+  ctx.arcTo(x, y + h, x, y, 12);
+  ctx.arcTo(x, y, x + w, y, 12);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#222';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  if (code) {
+    try {
+      const wrapped = `${code}\nif(typeof draw==='function')draw(ctx,w,h,color,time,player);`;
+      const fn = new Function('ctx', 'w', 'h', 'color', 'time', 'player', wrapped);
+      fn(ctx, w, h, '#ff6b6b', 0, { x: cx, y: py, vx: 0, vy: 0, onGround: true, alive: true, hasBomb: false });
+    } catch (e) {}
+  }
 }

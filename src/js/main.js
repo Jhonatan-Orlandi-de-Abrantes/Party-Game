@@ -7,6 +7,8 @@ import * as game from './game.js';
 import { drawScene, loadBombImage, setResolutionScale } from './render.js';
 import * as audio from './audio.js';
 import { spawnConfetti } from './effects.js';
+import { loadAllCosmeticImages } from './cosmetics.js';
+import { onCosmeticsSync } from './storage.js';
 import {
   refs,
   initUi,
@@ -35,7 +37,8 @@ import {
   getSettingsPlayer,
   showResultsOverlay,
   hideResultsOverlay,
-  setResultsOverlayBackCallback
+  setResultsOverlayBackCallback,
+  pollCosmeticsPositionStick
 } from './ui.js';
 
 function showRoundResult(result) {
@@ -743,6 +746,10 @@ function pollUiGamepad() {
     }
     st.options = optionsPressed;
 
+    const axis2 = pad.axes[2] || 0;
+    const axis3 = pad.axes[3] || 0;
+    pollCosmeticsPositionStick(axis2, axis3);
+
     const heldDir = now.up ? 'up' : now.down ? 'down' : now.left ? 'left' : now.right ? 'right' : null;
     const dpadBtn = !!(pad.buttons[12] && pad.buttons[12].pressed) ||
       !!(pad.buttons[13] && pad.buttons[13].pressed) ||
@@ -805,5 +812,7 @@ function initPage() {
 }
 
 loadBombImage();
+loadAllCosmeticImages();
+onCosmeticsSync(() => loadAllCosmeticImages());
 initUi();
 initPage();

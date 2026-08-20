@@ -19,7 +19,8 @@ export const state = {
   bombImageLoaded: false,
   lastBombHolder: null,
   uiPadPlayerId: null,
-  configTargetId: sessionStorage.getItem('bombPartyPlayerId')
+  configTargetId: sessionStorage.getItem('bombPartyPlayerId'),
+  cosmeticsCache: new Map()
 };
 
 function loadLocalPlayers() {

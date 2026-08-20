@@ -528,7 +528,11 @@ input[type="range"]::-moz-range-thumb {
   font-size: 0.78rem;
   box-shadow: 3px 3px 0 #222;
   background: #fff;
+  cursor: pointer;
+  border: 2px solid #ccc;
+  border-radius: 10px;
 }
+.hat-option:focus { outline: 3px solid #4dabf7; outline-offset: 2px; }
 .hat-option canvas {
   width: 96px;
   height: 96px;
@@ -553,6 +557,9 @@ input[type="range"]::-moz-range-thumb {
   justify-content: center;
   z-index: 100;
   padding: 16px;
+}
+#confirmModal {
+  z-index: 200;
 }
 .modal-box {
   background: #fff;
@@ -1098,4 +1105,146 @@ input[type="range"]::-moz-range-thumb {
 }
 .select-popup-option:last-child {
   margin-bottom: 0;
+}
+
+.cosmetics-modal-box {
+  max-width: 680px;
+  width: 92%;
+  max-height: 95vh;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  position: relative;
+  padding-bottom: 10px;
+}
+.cosmetics-create-row {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+}
+.cosmetics-create-row button {
+  flex: 1;
+}
+.cosmetics-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 12px;
+  overflow-y: auto;
+  max-height: 46vh;
+  padding: 4px;
+}
+.cosmetics-list .setting-hint {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 20px 8px;
+}
+.cosmetics-modal-hint {
+  position: relative;
+  margin-top: 12px;
+  font-size: 0.72rem;
+  color: #888;
+  font-weight: 600;
+  pointer-events: none;
+  text-align: center;
+}
+.cosmetics-item-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 6px;
+}
+.cosmetics-item-actions button {
+  padding: 5px 10px;
+  font-size: 0.72rem;
+  border-radius: 6px;
+}
+.cosmetics-item-actions button:focus { outline: 3px solid #4dabf7; outline-offset: 2px; }
+.cosmetics-equipped-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.cosmetics-equipped-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: #e8f5e9;
+  border: 1px solid #a5d6a7;
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+.cosmetics-equipped-tag button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1;
+  color: #c62828;
+}
+
+.cosmetics-position-box {
+  max-width: 340px;
+  width: 92%;
+  text-align: center;
+}
+.cosmetics-position-area {
+  display: flex;
+  justify-content: center;
+  margin: 12px 0;
+}
+.cosmetics-position-area canvas {
+  border: 3px solid #222;
+  border-radius: 12px;
+  background: #e8f0fe;
+  cursor: grab;
+  image-rendering: pixelated;
+  width: 192px;
+  height: 192px;
+}
+.cosmetics-position-area canvas:active {
+  cursor: grabbing;
+}
+.cosmetics-position-controls {
+  margin: 8px 0;
+}
+.cosmetics-position-controls label {
+  font-size: 0.9rem;
+}
+.cosmetics-position-controls input[type="range"] {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.cosmetics-code-box {
+  max-width: 480px;
+  width: 92%;
+}
+.cosmetics-code-textarea {
+  width: 100%;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 0.85rem;
+  padding: 10px;
+  border: 2px solid #ccc;
+  border-radius: 8px;
+  resize: vertical;
+  background: #1e1e2e;
+  color: #cdd6f4;
+  margin-top: 8px;
+}
+.cosmetics-code-textarea:focus {
+  border-color: #89b4fa;
+  outline: none;
+}
+.cosmetics-code-preview {
+  display: flex;
+  justify-content: center;
+  margin: 10px 0;
+}
+.cosmetics-code-preview canvas {
+  border: 2px solid #222;
+  border-radius: 8px;
+  background: #e8f0fe;
+  image-rendering: pixelated;
 }

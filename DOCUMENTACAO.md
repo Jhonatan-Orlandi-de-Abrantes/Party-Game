@@ -74,6 +74,15 @@ continua contando. O último de pé vence e vê uma tela de vitória com coroa �
 - **Partículas de caminhada:** quadrados sólidos da cor do personagem (sem
   borda), que sobem levemente e somem — visual puro, sem elipse/contorno.
 - Chapéus personalizados (persistidos por navegador via `deviceId`).
+- **Cosméticos customizados:** além dos chapéus do catálogo, cada jogador pode
+  **criar seus próprios cosméticos** em dois formatos — **imagem** (upload de
+  PNG/JPG/SVG/GIF, redimensionada para até 128×128px e máx. 200KB) ou
+  **código JavaScript** (função `draw(ctx, w, h, color, time, player)` com
+  preview ao vivo e importação de arquivo `.js`). Até **5 cosméticos equipados
+  por jogador**, cada um com **posição (offset X/Y) e escala (0.5×–3×)
+  ajustáveis** num editor visual (arrastar no canvas ou analógico direito do
+  controle). Visíveis para todos na sala e desenhados sobre o personagem
+  (depois do chapéu). Guia completo em `Criar seu Cosmetico/DOC-COSMETICOS.md`.
 - Timer da bomba no **topo central** da tela em fonte pixel, com cores por
   urgência (verde → amarelo → vermelho pulsante).
 - Indicador visual do seu personagem: **barra horizontal sob os pés** (16×4)
@@ -162,10 +171,12 @@ PartyGame/
 ├── DOC-IDEIAS-APLICACOES.url → Atalho para Google Doc com ideias futuras
 ├── JOGOS-REFERENCIA.txt      → Jogos usados como referência visual/sonora
 ├── plano-online.png          → Imagem/plano do modo online (referência futura)
-├── REFERENCIAS-MAPAS/        → Imagens de referência para mapas (ilhas.jpg, ziguezague.jpg)
+├── cosmetico-teste.js        → Exemplo de cosmético por código (asas animadas) para colar no editor
+├── Criar seu Cosmetico/
+│   └── DOC-COSMETICOS.md     → Guia completo do sistema de cosméticos customizados (uso + API)
 ├── src/
 │   ├── css/
-│   │   └── style.css         → Todos os estilos (cartões, aba de configs, chapéus, modal, confete, touch, responsivo)
+│   │   └── style.css         → Todos os estilos (cartões, aba de configs, chapéus, cosméticos, modal, confete, touch, responsivo)
 │   ├── Images/
 │   │   ├── BombGame/
 │   │   │   └── bomb.png      → Sprite da bomba
@@ -184,21 +195,22 @@ PartyGame/
 │       ├── render.js         → Desenho no canvas (personagens, timer, chapéus, FPS/ping)
 │       ├── maps.js           → Definição dos 6 mapas (nome, cores, plataformas)
 │       ├── hats.js           → Catálogo e desenho dos chapéus (canvas) + previews
-│       ├── ui.js             → DOM/UI: lobby, aba de configs, seleção de chapéu, modal de confirmação
+│       ├── cosmetics.js      → Cosméticos customizados (imagem/código): CRUD, equipar, desenho e preview
+│       ├── ui.js             → DOM/UI: lobby, aba de configs, seleção de chapéu, gerenciador de cosméticos, modal de confirmação
 │       ├── touch.js          → Controles touch mobile (setas/analogico, editor de layout)
 │       ├── donate.js         → Modal de doação PIX com código copia-e-cola
 │       ├── audio.js          → Música (menu/jogo) e efeitos (WebAudio + mp3), com volumes
-│       ├── effects.js        → Confetes (efeitos visuais DOM, ancoráveis a um elemento)
+│       └── effects.js        → Confetes (efeitos visuais DOM, ancoráveis a um elemento)
 ├── musics/
 │   ├── menu/               → Música do menu (menu1.mp3 … menu5.mp3)
 │   ├── game/               → Música da partida (gm1.mp3 … gm11.mp3)
 │   └── game-RUN/           → Reservado para futuro modo "CORRA!" (gmr1.mp3)
 └── sounds/
-    ├── countdown/           → Sons de contagem regressiva (countdown.mp3, start-menu.mp3)
-    ├── jump/                → Sons de pulo (sorteado dinamicamente da pasta: jump1.mp3, …)
-    ├── kill/                → Sons de explosão/morte
-    ├── leaderboard/         → Sons de placar
-    └── victory/             → Sons de vitória
+    ├── countdown/          → Sons de contagem regressiva (countdown.mp3, start-menu.mp3)
+    ├── jump/               → Sons de pulo (sorteado dinamicamente da pasta: jump1.mp3, …)
+    ├── kill/               → Sons de explosão/morte
+    ├── leaderboard/        → Sons de placar
+    └── victory/            → Sons de vitória
 ```
 
 ---
@@ -250,6 +262,10 @@ PartyGame/
   novo jogador.
 - **Convite (`?room=CÓDIGO`):** o link é montado no lobby e o código é
   **pré-preenchido** na tela inicial por `prefillRoomCodeFromUrl()`.
+- **Cosméticos customizados:** no boot chama `loadAllCosmeticImages()` e
+  registra `onCosmeticsSync` para recarregar as imagens quando outra aba
+  criar/editar um cosmético; no loop de menus, `pollCosmeticsPositionStick`
+  move o cosmético no editor de posição com o analógico direito.
 - Intervals: `heartbeat` (mantém jogadores vivos), `cleanupStalePlayers`
   (remove inativos), publicação de input (`publishLocalInputs`).
 
@@ -260,6 +276,10 @@ PartyGame/
 - `controlSets`: configuração de teclas padrão por player (fallback dos atalhos).
 - **Prefixos de chave do `localStorage`** usados por `storage.js` (incluindo os
   novos: limite de FPS, resolução, atalhos, chapéu, volumes e `deviceId`).
+- **Constantes de cosméticos customizados:** `COSMETICS_KEY`
+  (`bombPartyCosmeticsV1`), `COSMETICS_SYNC_KEY` (`bombPartyCosmeticsSync`),
+  `MAX_COSMETIC_SIZE` (200000 bytes), `MAX_COSMETIC_IMAGE_DIM` (128px) e
+  `MAX_COSMETICS_PER_PLAYER` (5).
 - Caminho da imagem da bomba, cores de explosão, nome do modo.
 
 ### `src/js/state.js`
@@ -272,6 +292,10 @@ PartyGame/
 - **Quem está sendo configurado:** `configTargetId` (player da aba de
   configurações) e `uiPadPlayerId` (dono do gamepad que navegou por último —
   define o alvo ao abrir a aba de configurações pelo menu).
+- **Cache de cosméticos:** `cosmeticsCache` (`Map<id, Image>`) — imagens dos
+  cosméticos customizados pré-carregadas em memória para o canvas não
+  reprocessar data URL a cada frame. Preenchido por
+  `cosmetics.loadAllCosmeticImages()`.
 - Helpers: `getMyPlayer()` (meu player na sala atual), `isHost()`,
   `getControlsForPlayer()`.
 
@@ -293,13 +317,22 @@ PartyGame/
     `resetTouchLayout`.
   - Globais: `getMusicVolume`/`setMusicVolume`, `getSfxVolume`/`setSfxVolume`
     (0–100, padrão 70 e 90), `bombPartyPixPresets` (presets de valores PIX).
+  - **Cosméticos customizados:** `loadCosmetics`/`saveCosmetics` (store inteiro
+    em `bombPartyCosmeticsV1`; cada gravação também atualiza
+    `bombPartyCosmeticsSync` com timestamp para disparar o evento `storage` nas
+    outras abas), `getCosmetic`/`saveCosmetic`/`deleteCosmetic`,
+    `getEquippedCosmetics`/`saveEquippedCosmetics` (lista por dispositivo em
+    `bombPartyEquipped_<deviceId>`) e `onCosmeticsSync(callback)` (escuta o
+    evento `storage` da chave de sync).
 
 ### `src/js/rooms.js`
 - Criação/entrada em salas, geração de código (`randomCode`) e cor (`randomColor`).
 - `createRoom(nickname, maxPlayers, mode)`: `mode` é `'local'` (padrão) — a
   partida é **mista** (abas separadas e/ou mesma tela). Cada jogador recebe
-  `deviceId` (do navegador), `hat` salvo e `score: 0`. Ao criar/entrar,
-  `localPlayerIds` é resetado para `[meu playerId]`.
+  `deviceId` (do navegador), `hat` salvo, `cosmetics`
+  (`getEquippedCosmetics()` — lista leve de referências dos cosméticos
+  equipados) e `score: 0`. Ao criar/entrar, `localPlayerIds` é resetado para
+  `[meu playerId]`.
 - `addLocalPlayer(nickname)`: cria um **jogador local** na sala atual (marca
   `local: true`), valida (sala cheia / apelido repetido / partida iniciada) e
   adiciona o id a `localPlayerIds`. Retorna `{ player }` ou `{ error }`.
@@ -338,6 +371,8 @@ PartyGame/
 
 ### `src/js/game.js` (simulação — só roda no HOST)
 - `initGame()`: cria jogadores, plataformas, escolhe quem inicia com a bomba.
+  Cada player da simulação copia `hat` e `cosmetics` do player da sala
+  (`player.cosmetics || []`) para serem desenhados durante a partida.
 - `stepGame(dt)`: física (gravidade, fricção, dash), colisões com plataformas,
   passagem da bomba, partículas.
 - **Regras da bomba:** ao ser passada, o timer **não reseta e não ganha +2s** —
@@ -382,9 +417,12 @@ PartyGame/
   vez; a largura da caixa **não muda** conforme o texto oscila, só os valores
   mudam; caixa e texto ficam um pouco **mais abaixo** do topo) com cor
   configurável por player.
+- `drawHat(ctx, player, hatId)` é chamado dentro do `drawPlayer`, seguido de
+  **`drawCosmetics(ctx, player, time)`** (de `cosmetics.js`) — os cosméticos
+  customizados são desenhados **por cima do chapéu**, acompanhando a animação.
 - `drawTrails()`: desenha o **vento** do pé dos personagens — **quadrados**
-  sólidos na cor do personagem (sem borda, sem elipse), alpha máximo 0.35, sobem
-  levemente e somem após `TRAIL_LIFE`.
+sólidos na cor do personagem (sem borda, sem elipse), alpha máximo 0.35, sobem
+levemente e somem após `TRAIL_LIFE`.
 
 ### `src/js/hats.js`
 - `HATS`: catálogo com `id` e `name` (primeira opção é `none` = **Vazio**).
@@ -460,8 +498,9 @@ PartyGame/
 
 ### Como "enxergar" as referências de chapéus (método usado pelas IAs)
 
-Ao criar/editar um cosmético temático, a referência é uma **imagem** em
-`REFERENCIAS/` e a IA não consegue vê-la diretamente. O método usado foi:
+Ao criar/editar um cosmético temático, a referência é uma **imagem** (pasta
+`REFERENCIAS/`, **não presente mais no repositório**) e a IA não consegue vê-la
+diretamente. O método usado foi:
 
 1. **Gerar uma "leitura" da imagem** com um script Python (PIL). O script:
    - redimensiona a imagem para uma grade de largura fixa (**W = 54** células),
@@ -525,6 +564,47 @@ e áreas escuras; `w` = rosto/peças claras; uma mancha contígua de `R`/`O`/`P`
 = detalhe colorido (crista, língua, enfeite). Sempre que possível, rodar com
 diferentes recortes (rosto, topo, corpo) para captar o todo antes de codificar.
 
+### `src/js/cosmetics.js` (cosméticos customizados)
+Sistema que permite ao jogador **criar cosméticos próprios** em dois formatos:
+- **`type: 'image'`** — upload de imagem (PNG/JPG/SVG/GIF), processada por
+  `processImageFile(file)` (valida tipo e tamanho ≤ 200KB, redimensiona para
+  no máximo 128×128px via canvas e devolve data URL PNG).
+- **`type: 'code'`** — código JavaScript colado no editor; executado com
+  `new Function('ctx','w','h','color','time','player', ...)` e chama
+  `draw(ctx, w, h, color, time, player)` se existir. Erros são silenciados em
+  jogo (`try/catch`) e mostrados como retângulo vermelho no preview.
+
+Estrutura de um cosmético: `{ id (UUID), name, type, data|code, createdAt }`.
+Cada **equipamento** guarda por cima `{ id, offsetX, offsetY, scale }`
+(posição = offset a partir do canto superior esquerdo do corpo; escala
+0.5×–3×).
+
+Funções principais:
+- CRUD: `createCosmeticImage`, `createCosmeticCode`, `updateCosmetic`,
+  `removeCosmetic` (também desequipa e limpa o cache).
+- Equipar: `equipCosmetic(id, offsetX, offsetY, scale)` (recusa acima de
+  `MAX_COSMETICS_PER_PLAYER` = 5 ou duplicado), `unequipCosmetic`,
+  `isEquipped`, `getEquippedList`.
+- Consulta: `getAllCosmetics`, `getCosmeticById`.
+- Cache: `preloadImage`/`loadAllCosmeticImages` mantêm `state.cosmeticsCache`
+  (`Map<id, Image>`) para desenhar sem reprocessar data URL.
+- Desenho: `drawCosmetics(ctx, player, time)` — chamado pelo `render.js`
+  dentro do `drawPlayer`; traduz para o topo do corpo
+  (`py - h`), aplica offset/escala e desenha imagens com
+  `drawImageCover` (crop central estilo `object-fit: cover`) ou executa o
+  código do usuário.
+- Preview: `drawCosmeticPreview(ctx, cosmetic, playerColor, time, canvasSize)`
+  — desenha um personagem completo (mesmo modelo do jogo) + o cosmético, usado
+  nas listas/editores (canvas 96×96 ou 192×192).
+
+**Arquitetura de sincronização:** os dados pesados (imagem/código) ficam num
+store separado (`bombPartyCosmeticsV1`); na sala cada player carrega apenas a
+lista leve `cosmetics: [{id, offsetX, offsetY, scale}]`. As outras abas
+reagem via evento `storage` na chave de sync e recarregam as imagens
+(`onCosmeticsSync` → `loadAllCosmeticImages`). Guia de uso e exemplos de
+código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
+`cosmetico-teste.js`.
+
 ### `src/js/ui.js` (DOM/UI)
 - `refs`: referências a todos os elementos do HTML.
 - **Aba de configurações** (engrenagem ⚙): `toggleSettingsPanel` /
@@ -544,8 +624,24 @@ diferentes recortes (rosto, topo, corpo) para captar o todo antes de codificar.
   esquerdo do corpo; os cosméticos são desenhados a partir de
   `top = player.y - player.h` (topo do corpo) e `player.x` (centro).
 - `showScreen(name)` também **fecha o seletor de chapéus** (além da aba de
-  configurações) ao sair da tela de lobby — assim, se o jogo iniciar enquanto
-  o jogador estiver na tela de cosméticos, ela é fechada automaticamente.
+   configurações) ao sair da tela de lobby — assim, se o jogo iniciar enquanto
+   o jogador estiver na tela de cosméticos, ela é fechada automaticamente.
+- **Gerenciador de cosméticos customizados** (`openCosmeticsModal`, botão
+  "Gerenciar Cosméticos Personalizáveis" da aba de configurações): lista todos
+  os cosméticos criados com preview (`drawCosmeticPreview`), botões **+ Imagem**
+  (upload via `cosmeticsFileInput`) e **+ Código** (editor com textarea,
+  preview ao vivo em canvas 96×96 e importação de arquivo `.js`). Clique
+  equipa/desequipa; **duplo clique abre o editor de posição**; renomear
+  (`prompt`) e excluir (com `showConfirm`) por cosmético. Ao equipar/salvar,
+  `updatePlayerCosmeticsInRoom()` grava a lista equipada nos players locais da
+  sala (`saveRooms`) para sincronizar com as outras abas.
+- **Editor de posição do cosmético** (`openCosmeticsPositionModal`): canvas
+  192×192 com o personagem + cosmético arrastável (mouse/touch), slider de
+  escala 0.5×–3× e Salvar/Cancelar. Também é movido pelo **analógico direito**
+  do controle via `pollCosmeticsPositionStick` (chamado no `pollUiGamepad` do
+  main.js). O modal de código e o gerenciador são fecháveis pelo gamepad
+  (Options/B) e o gerenciador tem navegação por direcional adaptada
+  (`moveCosmeticsModalFocus`).
 - **Modal de confirmação:** `showConfirm` / `hideConfirm` — usado para "Sair da
   sala?" e "Voltar para o lobby?".
 - **Modal de atribuição de controle (`padModal`):** `showPadConnect(padIndex)` /
@@ -619,8 +715,8 @@ diferentes recortes (rosto, topo, corpo) para captar o todo antes de codificar.
 - Seleção aleatória sem repetição: o jogo cicla por todos os mapas antes de
   repetir qualquer um.
 - Mapas Ilhas e Ziguezague foram redesenhados usando imagens de referência
-  (`REFERENCIAS-MAPAS/`) — as posições das plataformas seguem as linhas verdes
-  das imagens.
+  (pasta `REFERENCIAS-MAPAS/`, **não presente mais no repositório**) — as
+  posições das plataformas seguem as linhas verdes das imagens.
 
 ### `src/js/touch.js`
 - Controles touch mobile para dispositivos com tela sensível ao toque.
@@ -662,8 +758,13 @@ diferentes recortes (rosto, topo, corpo) para captar o todo antes de codificar.
    `bombPartyResolution_<id>`, `bombPartyKeys_<id>`,
    `bombPartyTouchEnabled_<id>`, `bombPartyTouchStyle_<id>`,
    `bombPartyTouchLayout_<id>`.
-6. **Por dispositivo** → `bombPartyDeviceId`, `bombPartyHat_<deviceId>`.
-7. **Globais** → `bombPartyMusicVolume`, `bombPartySfxVolume`,
+6. **Por dispositivo** → `bombPartyDeviceId`, `bombPartyHat_<deviceId>`,
+   `bombPartyEquipped_<deviceId>` (cosméticos customizados equipados).
+7. **Cosméticos (store pesado)** → `bombPartyCosmeticsV1` guarda os dados
+   completos (imagem/código) fora do estado da sala; cada gravação atualiza
+   `bombPartyCosmeticsSync` (timestamp) e as outras abas recarregam o cache de
+   imagens via evento `storage`.
+8. **Globais** → `bombPartyMusicVolume`, `bombPartySfxVolume`,
    `bombPartyPixPresets`.
 
 ## 6. Chaves do `localStorage`
@@ -685,6 +786,9 @@ diferentes recortes (rosto, topo, corpo) para captar o todo antes de codificar.
 | `bombPartyKeys_<id>`         | JSON com atalhos customizados (`left/right/jump/pass/dash`) |
 | `bombPartyDeviceId`          | UUID persistente do navegador (para salvar chapéu) |
 | `bombPartyHat_<deviceId>`    | Id do chapéu escolhido (padrão `none`)             |
+| `bombPartyCosmeticsV1`       | Store dos cosméticos customizados criados (`{ id: { id, name, type, data/code, createdAt } }`) |
+| `bombPartyCosmeticsSync`     | Timestamp da última gravação dos cosméticos (dispara sync entre abas via evento `storage`) |
+| `bombPartyEquipped_<deviceId>` | JSON com a lista de cosméticos equipados (`[{ id, offsetX, offsetY, scale }]`, máx. 5) |
 | `bombPartyTouchEnabled_<id>` | "1"/"0" — controles touch habilitados              |
 | `bombPartyTouchStyle_<id>`   | Estilo do touch: "arrows" ou "analog"              |
 | `bombPartyTouchLayout_<id>`  | JSON com posições dos botões touch (porcentagens)   |
@@ -718,6 +822,16 @@ diferentes recortes (rosto, topo, corpo) para captar o todo antes de codificar.
   (custom sobre padrão). Novos atalhos devem seguir o mesmo formato de chave.
 - **Chapéu:** é salvo por `deviceId` (persistente) e também gravado no player da
   sala para todos os tabs verem. `roomSignature` inclui `hat` e `mode`.
+- **Cosméticos customizados:** manter a separação **store pesado**
+  (`bombPartyCosmeticsV1`) × **referência leve na sala**
+  (`player.cosmetics = [{id, offsetX, offsetY, scale}]`) — nunca colocar a
+  imagem/código dentro do estado da sala (o estado é publicado a cada ~33ms).
+  Ao equipar/desequipar/mover, chamar `updatePlayerCosmeticsInRoom()` para
+  propagar aos players locais. Imagens só são desenhadas a partir de
+  `state.cosmeticsCache`; se adicionar novo tipo de cosmético, pré-carregue no
+  `loadAllCosmeticImages`. O código do usuário roda via `new Function` — erros
+  são engolidos em jogo; não passar referências internas do jogo para ele
+  (só o objeto `player` enxuto).
 - **Gamepad:** a atribuição é por playerId e armazenada por aba; o input lê o
   gamepad do player atribuído e mescla com o teclado. **Menus:** `getUiPad` só
   devolve um gamepad atribuído a um player **desta aba** (`localPlayerIds`) —
@@ -729,12 +843,3 @@ diferentes recortes (rosto, topo, corpo) para captar o todo antes de codificar.
   (dono do pad que abriu).
 - **Confirmações:** qualquer saída (sala/lobby) deve passar por `showConfirm`
   para manter o padrão da UI.
-
-## 8. Ideias futuras (já anotadas no projeto)
-
-- Editor de mapas com importador/exportador (na tela inicial, não no lobby).
-- Variedade de mapas diferentes escolhidos aleatoriamente a cada partida.
-- Modo de jogo "CORRA!" (um player é um monstro que persegue os demais).
-- Suporte a dispositivos móveis com botões visuais personalizáveis (estilos de
-  setas/analógico, posições editáveis, reset).
-- Timer de 7 segundos ao iniciar o jogo (estilo Gartic Phone).

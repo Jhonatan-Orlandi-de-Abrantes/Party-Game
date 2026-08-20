@@ -16,7 +16,9 @@ import {
   TOUCH_ENABLED_PREFIX,
   TOUCH_STYLE_PREFIX,
   TOUCH_LAYOUT_PREFIX,
-  PIX_PRESETS_KEY
+  PIX_PRESETS_KEY,
+  COSMETICS_KEY,
+  COSMETICS_SYNC_KEY
 } from './constants.js';
 
 export function loadRooms() {
@@ -239,4 +241,54 @@ export function getPixPresets() {
 
 export function savePixPresets(value) {
   localStorage.setItem(PIX_PRESETS_KEY, value);
+}
+
+export function loadCosmetics() {
+  try {
+    return JSON.parse(localStorage.getItem(COSMETICS_KEY) || '{}');
+  } catch (error) {
+    return {};
+  }
+}
+
+export function saveCosmetics(store) {
+  localStorage.setItem(COSMETICS_KEY, JSON.stringify(store));
+  localStorage.setItem(COSMETICS_SYNC_KEY, String(Date.now()));
+}
+
+export function getCosmetic(id) {
+  const store = loadCosmetics();
+  return store[id] || null;
+}
+
+export function saveCosmetic(cosmetic) {
+  const store = loadCosmetics();
+  store[cosmetic.id] = cosmetic;
+  saveCosmetics(store);
+  return cosmetic;
+}
+
+export function deleteCosmetic(id) {
+  const store = loadCosmetics();
+  delete store[id];
+  saveCosmetics(store);
+}
+
+export function getEquippedCosmetics() {
+  try {
+    const raw = localStorage.getItem('bombPartyEquipped_' + getDeviceId());
+    return raw ? JSON.parse(raw) : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+export function saveEquippedCosmetics(list) {
+  localStorage.setItem('bombPartyEquipped_' + getDeviceId(), JSON.stringify(list));
+}
+
+export function onCosmeticsSync(callback) {
+  window.addEventListener('storage', (e) => {
+    if (e.key === COSMETICS_SYNC_KEY) callback();
+  });
 }

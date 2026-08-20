@@ -2,6 +2,7 @@ import { state, getMyPlayer } from './state.js';
 import { PLAYER_WIDTH, PLAYER_HEIGHT, DASH_COOLDOWN, BOMB_IMAGE_PATH, MAX_BOMB_TIME, TRAIL_LIFE, SHOW_MAP_NAME } from './constants.js';
 import { getFpsEnabled, getFpsColor } from './storage.js';
 import { drawHat } from './hats.js';
+import { drawCosmetics } from './cosmetics.js';
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -155,6 +156,7 @@ function drawPlayer(player, time) {
   ctx.stroke();
 
   drawHat(ctx, { x: player.x, y: player.y, w, h, vx: player.vx, color: player.color }, player.hat);
+  drawCosmetics(ctx, player, time);
 
   ctx.restore();
 

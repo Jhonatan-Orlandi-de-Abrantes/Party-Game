@@ -1,6 +1,6 @@
 import { state, saveLocalPlayers } from './state.js';
 import { ROOM_CODE_LENGTH, STALE_TIMEOUT } from './constants.js';
-import { loadRooms, saveRooms, removePlayerInput, gameKey, getDeviceId, getHat } from './storage.js';
+import { loadRooms, saveRooms, removePlayerInput, gameKey, getDeviceId, getHat, getEquippedCosmetics } from './storage.js';
 
 export function randomCode() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -25,7 +25,7 @@ export function createRoom(nickname, maxPlayers, mode = 'local') {
   const code = randomCode();
   const playerId = crypto.randomUUID();
   const deviceId = getDeviceId();
-  const player = { id: playerId, nickname, color: randomColor(), host: true, joinedAt: Date.now(), lastSeen: Date.now(), deviceId, hat: getHat(deviceId), score: 0 };
+  const player = { id: playerId, nickname, color: randomColor(), host: true, joinedAt: Date.now(), lastSeen: Date.now(), deviceId, hat: getHat(deviceId), cosmetics: getEquippedCosmetics(), score: 0 };
   const room = { code, players: [player], maxPlayers, started: false, ownerId: playerId, createdAt: Date.now(), mode };
   state.rooms.push(room);
   saveRooms();
@@ -50,7 +50,7 @@ export function joinRoom(nickname, code) {
   }
   const playerId = crypto.randomUUID();
   const deviceId = getDeviceId();
-  const player = { id: playerId, nickname, color: randomColor(), host: false, joinedAt: Date.now(), lastSeen: Date.now(), deviceId, hat: getHat(deviceId), score: 0 };
+  const player = { id: playerId, nickname, color: randomColor(), host: false, joinedAt: Date.now(), lastSeen: Date.now(), deviceId, hat: getHat(deviceId), cosmetics: getEquippedCosmetics(), score: 0 };
   room.players.push(player);
   saveRooms();
   state.myPlayerId = playerId;
@@ -74,7 +74,7 @@ export function addLocalPlayer(nickname) {
   }
   const playerId = crypto.randomUUID();
   const deviceId = getDeviceId();
-  const player = { id: playerId, nickname, color: randomColor(), host: false, joinedAt: Date.now(), lastSeen: Date.now(), deviceId, hat: getHat(deviceId), local: true, score: 0 };
+  const player = { id: playerId, nickname, color: randomColor(), host: false, joinedAt: Date.now(), lastSeen: Date.now(), deviceId, hat: getHat(deviceId), cosmetics: getEquippedCosmetics(), local: true, score: 0 };
   room.players.push(player);
   saveRooms();
   state.currentRoom = room;

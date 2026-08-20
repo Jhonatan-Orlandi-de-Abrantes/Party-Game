@@ -22,6 +22,11 @@ export const TOUCH_ENABLED_PREFIX = 'bombPartyTouchEnabled_';
 export const TOUCH_STYLE_PREFIX = 'bombPartyTouchStyle_';
 export const TOUCH_LAYOUT_PREFIX = 'bombPartyTouchLayout_';
 export const PIX_PRESETS_KEY = 'bombPartyPixPresets';
+export const COSMETICS_KEY = 'bombPartyCosmeticsV1';
+export const COSMETICS_SYNC_KEY = 'bombPartyCosmeticsSync';
+export const MAX_COSMETIC_SIZE = 200000;
+export const MAX_COSMETIC_IMAGE_DIM = 128;
+export const MAX_COSMETICS_PER_PLAYER = 5;
 export const PUBLISH_INTERVAL = 33;
 export const HOST_TIMEOUT = 3000;
 

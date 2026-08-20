@@ -57,6 +57,7 @@ export function initGame() {
       passCooldown: 0,
       lastPasser: null,
       hat: player.hat,
+      cosmetics: player.cosmetics || [],
       controls: controlSets[index] || controlSets[0]
     };
   });

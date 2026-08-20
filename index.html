@@ -102,8 +102,12 @@
               </div>
             </div>
             <div class="setting-line">
-              <label for="hatBtn">Chapéu</label>
-              <button id="hatBtn" class="secondary">Escolher chapéu</button>
+              <label for="hatBtn">Cosméticos</label>
+              <button id="hatBtn" class="secondary">Escolher Cosmético</button>
+            </div>
+            <div class="setting-line">
+              <label>Cosméticos Personalizáveis</label>
+              <button id="openCosmeticsEditorBtn" class="secondary">Gerenciar Cosméticos Personalizáveis</button>
             </div>
           </div>
 
@@ -219,7 +223,7 @@
 
   <div id="hatPopup" class="hat-popup hidden">
     <div class="hat-popup-box">
-      <h3>Escolha seu chapéu</h3>
+      <h3>Escolha seu Cosmético</h3>
       <div id="hatGrid" class="hat-grid"></div>
       <div class="link-row">
         <button id="hatCloseBtn" class="secondary">Fechar</button>
@@ -321,6 +325,57 @@
       <div class="notice" id="padModalNotice"></div>
       <div class="link-row">
         <button id="padModalCancelBtn" class="secondary">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="cosmeticsModal" class="modal hidden">
+    <div class="modal-box cosmetics-modal-box">
+      <h3>Cosméticos Customizados</h3>
+      <div class="cosmetics-create-row">
+        <button id="cosmeticsCreateImgBtn">+ Imagem</button>
+        <button id="cosmeticsCreateCodeBtn">+ Código</button>
+        <input type="file" id="cosmeticsFileInput" accept="image/*" class="hidden" />
+        <input type="file" id="cosmeticsJsFileInput" accept=".js" class="hidden" />
+      </div>
+      <div id="cosmeticsList" class="cosmetics-list"></div>
+      <div class="link-row" style="margin-top:14px;">
+        <button id="cosmeticsModalCloseBtn" class="secondary">Fechar</button>
+      </div>
+      <span class="cosmetics-modal-hint">Clique para selecionar · Duplo clique para editar</span>
+    </div>
+  </div>
+
+  <div id="cosmeticsPositionModal" class="modal hidden">
+    <div class="modal-box cosmetics-position-box">
+      <h3>Posicionar cosmético</h3>
+      <p class="setting-hint">Arraste o cosmético no personagem para posicionar. Use o analógico direito no controle.</p>
+      <div class="cosmetics-position-area">
+        <canvas id="cosmeticsPositionCanvas" width="192" height="192"></canvas>
+      </div>
+      <div class="cosmetics-position-controls">
+        <label>Escala: <span id="cosmeticsScaleValue">1.0</span>x</label>
+        <input type="range" id="cosmeticsScaleInput" min="5" max="30" step="1" value="10" />
+      </div>
+      <div class="link-row" style="margin-top:14px;">
+        <button id="cosmeticsPositionSaveBtn">Salvar</button>
+        <button id="cosmeticsPositionCancelBtn" class="secondary">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="cosmeticsCodeModal" class="modal hidden">
+    <div class="modal-box cosmetics-code-box">
+      <h3>Cosmético por código</h3>
+      <p class="setting-hint">Cole código JavaScript ou importe um arquivo .js</p>
+      <textarea id="cosmeticsCodeInput" class="cosmetics-code-textarea" rows="12" spellcheck="false" placeholder="// Variáveis: ctx, w, h, color, time, player&#10;function draw(ctx, w, h, color, time, player) {&#10;  ctx.fillStyle = color;&#10;  ctx.fillRect(0, 0, w, h / 2);&#10;}"></textarea>
+      <div class="cosmetics-code-preview">
+        <canvas id="cosmeticsCodePreviewCanvas" width="96" height="96"></canvas>
+      </div>
+      <div class="link-row" style="margin-top:14px;">
+        <button id="cosmeticsCodeImportBtn" class="secondary">Importar .js</button>
+        <button id="cosmeticsCodeSaveBtn">Salvar</button>
+        <button id="cosmeticsCodeCancelBtn" class="secondary">Cancelar</button>
       </div>
     </div>
   </div>

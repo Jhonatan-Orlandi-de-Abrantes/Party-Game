@@ -100,7 +100,7 @@
       <div class="map-editor-main">
         <div class="map-editor-canvas-wrap">
           <canvas id="mapEditorCanvas" width="1080" height="540"></canvas>
-          <p class="setting-hint">Ferramenta "Adicionar": arraste para criar uma plataforma. Ferramenta "Selecionar": arraste para mover, use as alças dos cantos para redimensionar. Delete remove a plataforma selecionada.</p>
+          <p class="setting-hint">Ferramenta "Adicionar": arraste para criar uma plataforma. Ferramenta "Selecionar": arraste para mover, use as alças dos cantos para redimensionar. Delete remove a plataforma selecionada. Ferramenta "Spawns": clique para marcar onde cada jogador nasce (P1–P4, um por jogador); arraste para mover e Delete remove o marcador selecionado.</p>
         </div>
 
         <aside class="map-editor-sidebar">
@@ -109,6 +109,7 @@
             <div class="map-editor-tools">
               <button id="mapToolSelectBtn" class="key-btn active" type="button">Selecionar</button>
               <button id="mapToolAddBtn" class="key-btn btn-teal" type="button">+ Plataforma</button>
+              <button id="mapToolSpawnBtn" class="key-btn btn-orange" type="button">🚩 Spawns</button>
               <button id="mapDuplicateBtn" class="key-btn btn-orange" type="button">Duplicar</button>
               <button id="mapDeleteBtn" class="key-btn danger-btn" type="button">Excluir</button>
             </div>
@@ -180,7 +181,7 @@
         <div class="setting-group lobby-mode-group">
           <div class="lobby-mode-head">
             <strong class="setting-title">Modo de jogo</strong>
-            <button type="button" id="hostConfigBtn" class="host-config-btn hidden">Mapas &amp; Regras</button>
+            <button type="button" id="hostConfigBtn" class="host-config-btn hidden">Regras do Jogo</button>
           </div>
           <div id="lobbyModeList" class="lobby-mode-list"></div>
         </div>
@@ -206,7 +207,7 @@
 
       <div class="controls">
         <strong>Como jogar:</strong>
-        <p>Encoste em outro jogador para passar a bomba. Após 15 segundos ela explode em quem a segura. Use o dash para escapar. Cada jogador pode escolher seu controle (ou teclado) na lista de jogadores acima.</p>
+        <p id="lobbyHowToText">Encoste em outro jogador para passar a bomba. Após 15 segundos ela explode em quem a segura. Use o dash para escapar. Cada jogador pode escolher seu controle (ou teclado) na lista de jogadores acima.</p>
       </div>
 
       <div id="settingsPanel" class="settings-panel">
@@ -409,17 +410,17 @@
   <div id="hostConfigPanel" class="modal hidden">
     <div class="modal-box host-config-box">
       <div class="host-config-head">
-        <h3>Mapas &amp; Regras da partida</h3>
+        <h3>Regras do Jogo</h3>
         <button type="button" id="hostConfigCloseBtn" title="Fechar">✕</button>
       </div>
-      <p class="setting-hint">Somente o host pode alterar estas opções.</p>
+      <p class="setting-hint">Host: <span id="hostConfigHostName"></span></p>
 
       <div class="setting-group lobby-maps-group">
         <strong class="setting-title">Mapas da partida</strong>
         <p class="setting-hint">Toque em um mapa para incluir ou retirar da partida. Sem seleção, todos entram.</p>
         <div class="lobby-maps-columns">
           <div class="lobby-maps-col">
-            <strong>Mapas nativos</strong>
+            <strong>Mapas</strong>
             <div id="lobbyNativeMaps" class="lobby-map-grid"></div>
           </div>
           <div class="lobby-maps-col">

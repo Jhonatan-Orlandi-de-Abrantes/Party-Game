@@ -17,6 +17,8 @@ export const state = {
   particles: [],
   bombImage: null,
   bombImageLoaded: false,
+  eggImage: null,
+  eggImageLoaded: false,
   lastBombHolder: null,
   uiPadPlayerId: null,
   configTargetId: sessionStorage.getItem('bombPartyPlayerId'),

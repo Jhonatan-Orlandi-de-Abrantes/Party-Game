@@ -4,6 +4,8 @@ import {
   MAX_MAP_PLATFORMS,
   MAP_EDITOR_WIDTH,
   MAP_EDITOR_HEIGHT,
+  MAX_SPAWNS,
+  SPAWN_COLORS,
   uuid
 } from './constants.js';
 import {
@@ -27,6 +29,7 @@ const ctx = canvas.getContext('2d');
 
 let workingMap = null;
 let selectedIndex = -1;
+let selectedSpawn = -1;
 let tool = 'select';
 let drag = null;
 let previewAudio = null;
@@ -42,6 +45,7 @@ function newMap() {
     platforms: [
       { x: 0, y: 500, width: 1080, height: 40, color: DEFAULT_PALETTE[0] }
     ],
+    spawns: [],
     music: { type: 'default' },
     updatedAt: Date.now()
   };
@@ -53,6 +57,7 @@ export function openMapEditor() {
     const saved = loadCustomMaps();
     workingMap = saved.length > 0 ? cloneMap(saved[saved.length - 1]) : newMap();
     selectedIndex = -1;
+    selectedSpawn = -1;
   }
   showScreen('mapEditor');
   syncAllInputs();
@@ -103,6 +108,7 @@ export function initMapEditor() {
     saveWorkingMap(false);
     workingMap = newMap();
     selectedIndex = -1;
+    selectedSpawn = -1;
     stopPreview();
     syncAllInputs();
     renderCanvas();
@@ -150,8 +156,15 @@ export function initMapEditor() {
 
   $('mapToolSelectBtn').addEventListener('click', () => setTool('select'));
   $('mapToolAddBtn').addEventListener('click', () => setTool('add'));
+  $('mapToolSpawnBtn').addEventListener('click', () => setTool('spawn'));
   $('mapDuplicateBtn').addEventListener('click', duplicateSelected);
-  $('mapDeleteBtn').addEventListener('click', deleteSelected);
+  $('mapDeleteBtn').addEventListener('click', () => {
+    if (selectedSpawn >= 0) {
+      deleteSelectedSpawn();
+      return;
+    }
+    deleteSelected();
+  });
 
   for (const [propId, prop] of [['mapPropX', 'x'], ['mapPropY', 'y'], ['mapPropW', 'width'], ['mapPropH', 'height']]) {
     $(propId).addEventListener('input', () => applyPropInput(prop, $(propId).value));
@@ -193,9 +206,14 @@ export function initMapEditor() {
     if (state.currentScreen !== 'mapEditor') return;
     const tag = document.activeElement && document.activeElement.tagName;
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
-    if ((event.key === 'Delete' || event.key === 'Backspace') && selectedIndex >= 0) {
-      event.preventDefault();
-      deleteSelected();
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      if (selectedSpawn >= 0) {
+        event.preventDefault();
+        deleteSelectedSpawn();
+      } else if (selectedIndex >= 0) {
+        event.preventDefault();
+        deleteSelected();
+      }
     }
   });
 
@@ -208,12 +226,34 @@ function setTool(next) {
   tool = next;
   $('mapToolSelectBtn').classList.toggle('active', tool === 'select');
   $('mapToolAddBtn').classList.toggle('active', tool === 'add');
-  canvas.style.cursor = tool === 'add' ? 'crosshair' : 'default';
+  $('mapToolSpawnBtn').classList.toggle('active', tool === 'spawn');
+  canvas.style.cursor = tool === 'select' ? 'default' : 'crosshair';
 }
 
 function getSelectedPlatform() {
   if (!workingMap || selectedIndex < 0) return null;
   return workingMap.platforms[selectedIndex] || null;
+}
+
+function spawnAt(point) {
+  if (!workingMap || !Array.isArray(workingMap.spawns)) return -1;
+  for (let i = workingMap.spawns.length - 1; i >= 0; i--) {
+    const s = workingMap.spawns[i];
+    if (Math.abs(point.x - s.x) <= 18 && Math.abs(point.y - s.y) <= 22) return i;
+  }
+  return -1;
+}
+
+function deleteSelectedSpawn() {
+  if (!workingMap || !Array.isArray(workingMap.spawns)) return;
+  if (selectedSpawn < 0 || !workingMap.spawns[selectedSpawn]) {
+    showEditorNotice('Nenhum spawn selecionado.');
+    return;
+  }
+  workingMap.spawns.splice(selectedSpawn, 1);
+  selectedSpawn = -1;
+  markDirty();
+  renderCanvas();
 }
 
 let editorToastTimer = null;
@@ -318,6 +358,29 @@ function onPointerDown(event) {
   canvas.setPointerCapture(event.pointerId);
   const point = canvasPoint(event);
 
+  if (tool === 'spawn') {
+    if (!Array.isArray(workingMap.spawns)) workingMap.spawns = [];
+    const hit = spawnAt(point);
+    if (hit >= 0) {
+      selectedSpawn = hit;
+      selectedIndex = -1;
+      syncPlatformInputs();
+      const s = workingMap.spawns[hit];
+      drag = { mode: 'spawnMove', index: hit, offsetX: point.x - s.x, offsetY: point.y - s.y };
+    } else if (workingMap.spawns.length >= MAX_SPAWNS) {
+      showEditorNotice(`Limite de ${MAX_SPAWNS} pontos de nascimento (um por jogador).`);
+      return;
+    } else {
+      workingMap.spawns.push({ x: Math.round(point.x), y: Math.round(point.y) });
+      selectedSpawn = workingMap.spawns.length - 1;
+      selectedIndex = -1;
+      syncPlatformInputs();
+      markDirty();
+    }
+    renderCanvas();
+    return;
+  }
+
   if (tool === 'add') {
     drag = { mode: 'create', startX: point.x, startY: point.y, rect: null };
     return;
@@ -331,6 +394,7 @@ function onPointerDown(event) {
   }
 
   const hit = platformAt(point);
+  selectedSpawn = -1;
   if (hit >= 0) {
     selectedIndex = hit;
     const p = workingMap.platforms[hit];
@@ -355,6 +419,15 @@ function onPointerMove(event) {
       width: Math.abs(point.x - drag.startX),
       height: Math.abs(point.y - drag.startY)
     };
+    renderCanvas();
+    return;
+  }
+
+  if (drag.mode === 'spawnMove') {
+    const s = workingMap.spawns && workingMap.spawns[drag.index];
+    if (!s) return;
+    s.x = Math.round(Math.min(MAP_EDITOR_WIDTH, Math.max(0, point.x - drag.offsetX)));
+    s.y = Math.round(Math.min(MAP_EDITOR_HEIGHT, Math.max(0, point.y - drag.offsetY)));
     renderCanvas();
     return;
   }
@@ -416,6 +489,8 @@ function onPointerUp() {
     } else {
       showEditorNotice(`Limite de ${MAX_MAP_PLATFORMS} plataformas.`);
     }
+  } else if (drag.mode === 'spawnMove') {
+    markDirty();
   } else {
     markDirty();
   }
@@ -484,6 +559,48 @@ function renderCanvas() {
       ctx.stroke();
     }
   }
+
+  const spawns = Array.isArray(workingMap.spawns) ? workingMap.spawns : [];
+  spawns.forEach((spawn, index) => {
+    const color = SPAWN_COLORS[index % SPAWN_COLORS.length];
+    const isSelected = index === selectedSpawn;
+
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(spawn.x, spawn.y + 4, 16, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    if (isSelected) {
+      ctx.strokeStyle = '#222';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      ctx.arc(spawn.x, spawn.y - 12, 22, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    ctx.fillStyle = color;
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(spawn.x, spawn.y);
+    ctx.lineTo(spawn.x, spawn.y - 24);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(spawn.x, spawn.y - 30, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.font = 'bold 11px "Trebuchet MS", Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.fillText('P' + (index + 1), spawn.x, spawn.y - 29.5);
+    ctx.textBaseline = 'alphabetic';
+  });
 }
 
 function syncAllInputs() {
@@ -663,6 +780,7 @@ function renderSavedList() {
       saveWorkingMap(false);
       workingMap = cloneMap(entry);
       selectedIndex = -1;
+      selectedSpawn = -1;
       stopPreview();
       syncAllInputs();
       renderCanvas();
@@ -698,6 +816,7 @@ function removeSavedMap(id) {
   if (workingMap && workingMap.id === id) {
     workingMap = newMap();
     selectedIndex = -1;
+    selectedSpawn = -1;
     syncAllInputs();
     renderCanvas();
   }
@@ -721,6 +840,7 @@ function exportMap() {
     name: workingMap.name,
     bg: workingMap.bg,
     platforms: workingMap.platforms.map(p => ({ ...p })),
+    spawns: (Array.isArray(workingMap.spawns) ? workingMap.spawns : []).map(s => ({ ...s })),
     music: { ...(workingMap.music || { type: 'default' }) }
   };
   if (payload.music.type === 'custom' && payload.music.id) {
@@ -754,6 +874,15 @@ function sanitizePlatform(raw) {
     ? raw.color
     : DEFAULT_PALETTE[0];
   return { x, y, width, height, color };
+}
+
+function sanitizeSpawns(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, MAX_SPAWNS).map(spawn => {
+    const x = Math.min(MAP_EDITOR_WIDTH, Math.max(0, Math.round(Number(spawn && spawn.x))));
+    const y = Math.min(MAP_EDITOR_HEIGHT, Math.max(0, Math.round(Number(spawn && spawn.y))));
+    return { x: Number.isFinite(x) ? x : 0, y: Number.isFinite(y) ? y : 0 };
+  });
 }
 
 function importMapFile(file) {
@@ -803,10 +932,12 @@ function importMapFile(file) {
       mode,
       bg: typeof data.bg === 'string' && /^#[0-9a-f]{6}$/i.test(data.bg) ? data.bg : '#bfe8ff',
       platforms: data.platforms.map(sanitizePlatform),
+      spawns: sanitizeSpawns(data.spawns),
       music,
       updatedAt: Date.now()
     };
     selectedIndex = -1;
+    selectedSpawn = -1;
     stopPreview();
     saveWorkingMap(false);
     syncAllInputs();

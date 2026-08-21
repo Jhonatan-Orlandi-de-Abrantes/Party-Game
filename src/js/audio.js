@@ -2,6 +2,7 @@ import { getMusicVolume, getSfxVolume, getCustomMusic } from './storage.js';
 
 const MENU_TRACKS = ['menu1', 'menu2', 'menu3', 'menu4', 'menu5'].map(name => `musics/menu/${name}.mp3`);
 const GAME_TRACKS = ['gm1', 'gm2', 'gm3', 'gm4', 'gm5', 'gm6', 'gm7', 'gm8', 'gm9', 'gm10', 'gm11'].map(name => `musics/game/${name}.mp3`);
+const RUN_TRACKS = ['musics/game-RUN/gmr1.mp3'];
 
 const SOUND_GROUPS = {
   'start-countdown': ['countdown'].map(name => `sounds/countdown/${name}.mp3`),
@@ -41,6 +42,10 @@ function playFile(src) {
   if (promise && promise.catch) promise.catch(() => {});
 }
 
+export function playSfxFile(src) {
+  playFile(src);
+}
+
 let menuAudio = null;
 let gameAudio = null;
 let gameAudioSrc = null;
@@ -61,7 +66,8 @@ export function getNativeGameTracks() {
   return GAME_TRACKS.slice();
 }
 
-function resolveGameTrack(map) {
+function resolveGameTrack(map, mode) {
+  if (mode === 'run') return randomTrack(RUN_TRACKS);
   const music = map && map.music;
   if (music && music.type === 'native' && music.track) {
     const src = 'musics/game/' + music.track;
@@ -96,10 +102,10 @@ export function playMenuMusic() {
   if (menuAudio.paused) startMusic(menuAudio);
 }
 
-export function playGameMusic(map) {
+export function playGameMusic(map, mode) {
   stopMusic(menuAudio);
   menuAudio = null;
-  const src = resolveGameTrack(map);
+  const src = resolveGameTrack(map, mode);
   if (!gameAudio || gameAudioSrc !== src) {
     stopMusic(gameAudio);
     gameAudio = new Audio(src);

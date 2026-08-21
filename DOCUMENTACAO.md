@@ -91,10 +91,14 @@ continua contando. O último de pé vence e vê uma tela de vitória com coroa �
   — mostrado para **todos os jogadores locais** da aba, no lugar da antiga
   borda.
 - **Placar de pontuação:** ao fim de cada rodada o jogo dá **pontos distintos**
-  por posição (vencedor primeiro, depois os demais pela pontuação acumulada,
-  perdedor da rodada por último; pontos = nº de jogadores − posição). A pontuação
-  de cada jogador persiste na sala e o placar aparece no fim da rodada com
-  **1º 👑 (coroa brilhante), 2º, 3º, 4º** — um lugar para cada jogador.
+  por posição no ranking da rodada (`nº de jogadores − posição`: 1º = n pts …
+  último = 1 pt). A **ordem do ranking depende do modo** (`awardRoundPoints`,
+  ver seção game.js): 💣 bomb = quem passou a bomba vence, demais por pontuação
+  acumulada e explodido por último; 🥚 egg = sobrevivente primeiro e mortos em
+  ordem inversa de morte; 🏃 run = sobreviventes (por vidas) > monstro > mortos.
+  A pontuação de cada jogador persiste na sala e o placar aparece no fim da
+  rodada com **1º 👑 (coroa brilhante), 2º, 3º, 4º** — um lugar para cada
+  jogador.
 - **Fim de rodada na mesma tela:** mostra **somente o placar** com o título
   **"👑 {NOME} VENCEU! 👑"** — nome do vencedor na cor dele — sem tela de
   "Explodiu"/"Ganhou", sem confete e sem
@@ -139,6 +143,35 @@ continua contando. O último de pé vence e vê uma tela de vitória com coroa �
   para editar/excluir, e **exporta/importa arquivos `.pgmap`** (JSON portátil
   que inclui o modo de jogo e embute a música personalizada). Mapas salvos
   entram automaticamente no sorteio de mapas das partidas.
+- **Pontos de nascimento (spawns) no editor:** a ferramenta **"🚩 Spawns"**
+  marca onde cada jogador nasce no mapa (P1–P4, um ponto por jogador, na cor
+  da paleta `SPAWN_COLORS`). Clique adiciona um ponto (máx. 4), arraste move,
+  Delete/Excluir remove o selecionado. Os spawns são salvos com o mapa
+  (`spawns[]`), incluídos no `.pgmap` exportado e aparecem como bolinhas nos
+  previews do lobby. Em partida, o jogador de índice i nasce em `spawns[i]`
+  (sem spawns definidos, vale o posicionamento padrão em linha).
+- **Modo 🥚 Pegue o Ovo:** um jogador começa com o ovo (imagem
+  `src/Images/egg/egg.png` flutuando acima dele, como a bomba). Cada **0,2s**
+  com o ovo vale **1 ponto**, exibido em tempo real num mostrador por jogador
+  na **cor de cada um** nos quatro cantos da tela (P1 sup. esq., P2 sup. dir.,
+  P3 inf. esq., P4 inf. dir.). Encostar em quem segura **rouba** o ovo (com
+  `passCooldown` de 0,6s). A cada **10 segundos** o contador (mesmo visual do
+  modo bomba) zera e **explode o jogador vivo com MENOS pontos** (empate:
+  sorteio), reiniciando a contagem — repete até sobrar **um único jogador**,
+  que vence. Usa os mesmos mapas do bomb clássico (nativos + mapas
+  customizados de modo bomb ou egg). Placar da rodada pela **ordem de morte**:
+  1º a morrer = 1pt … último vivo = n pts.
+- **Modo 🏃 CORRA!:** um jogador aleatório (evitando repetir o da rodada
+  anterior) é o **monstro** — corpo roxo com chifres, olhos vermelhos, boca
+  serrilhada e aura pulsante. Os demais têm **2 corações** (círculos vermelhos
+  abaixo do player). O monstro persegue e, ao **encostar** num jogador, tira
+  **1 coração** (com knockback + 1,2s de invulnerabilidade piscando; som
+  sincronizado entre abas via `gs.hitCount`). Sem corações, o jogador **explode**
+  como no bomb (`deathOrder` + `explosionCount`). Rodada dura **12 segundos** e
+  termina quando só restar o monstro ou o tempo acabar. Usa os mesmos mapas do
+  bomb clássico e música própria (`musics/game-RUN/gmr1.mp3`). Placar:
+  sobreviventes (por vidas restantes) > monstro > mortos em ordem inversa —
+  quanto mais o monstro matou, mais pontos ele ganha e menos os outros.
 - **Design responsivo:** breakpoint em 720px para adaptação em telas menores.
 
 ---
@@ -215,7 +248,7 @@ PartyGame/
 ├── musics/
 │   ├── menu/               → Música do menu (menu1.mp3 … menu5.mp3)
 │   ├── game/               → Música da partida (gm1.mp3 … gm11.mp3)
-│   └── game-RUN/           → Reservado para futuro modo "CORRA!" (gmr1.mp3)
+│   └── game-RUN/           → Música do modo "CORRA!" (gmr1.mp3)
 └── sounds/
     ├── countdown/          → Sons de contagem regressiva (countdown.mp3, start-menu.mp3)
     ├── jump/               → Sons de pulo (sorteado dinamicamente da pasta: jump1.mp3, …)
@@ -262,8 +295,11 @@ PartyGame/
   fiquem visíveis mesmo sem console aberto.
 - **Confirmações:** sair da sala (lobby e aba de configs) e voltar ao lobby
   durante o jogo (botão ✕ ou botão **Options** do controle) passam por um modal
-  de confirmação. Em jogo, apertar **Options** abre o modal e apertar de novo o
-  fecha (volta ao jogo).
+  de confirmação. Em jogo, apertar **Options** (ou **Esc** no teclado — mesmo
+  efeito do Options, ignorado durante rebinding de tecla) abre o modal e
+  apertar de novo o fecha (volta ao jogo). Enquanto o modal está aberto, a
+  **simulação congela**: o `gameLoop` pula o `stepGame` mas continua publicando
+  heartbeat (`publishHeartbeat`) para os clientes não assumirem como simulador.
 - **Menus por controle (`pollUiGamepad`):** a aba só reage ao gamepad
   **atribuído a um jogador desta aba** (`localPlayerIds`). Isso corrige o bug de
   um controle agir nos menus de duas abas ao mesmo tempo.
@@ -303,9 +339,17 @@ PartyGame/
   (`bombPartyCustomMapsV1`), `CUSTOM_MUSICS_KEY` (`bombPartyCustomMusicsV1`),
   `MAX_MAP_MUSIC_SIZE` (2,5MB), `MAX_MAP_PLATFORMS` (60),
   `MAP_EDITOR_WIDTH/HEIGHT` (1080×540) e `GAME_MODES` (lista de modos
-  suportados — hoje só `bomb` = "💣 Bomb Clássico", já com a propriedade `color`
-  usada pelo tema do lobby; usada pelo seletor de modo do editor, para validar
-  arquivos importados e para renderizar os chips de modo do lobby).
+  suportados — `bomb` = "💣 Bomb Clássico", `egg` = "🥚 Pegue o Ovo" e
+  `run` = "🏃 CORRA!", cada um com a propriedade `color` usada pelo tema do
+  lobby; usada pelo seletor de modo do editor, para validar arquivos
+  importados e para renderizar os chips de modo do lobby).
+- **Constantes do modo Pegue o Ovo:** `EGG_IMAGE_PATH`
+  (`src/Images/egg/egg.png`), `EGG_ROUND_TIME` (10s — ciclo de explosão),
+  `EGG_SCORE_TICK` (0,2s por ponto) e `SPAWN_COLORS`/`MAX_SPAWNS` (paleta e
+  limite dos pontos de nascimento do editor).
+- **Constantes do modo CORRA!:** `RUN_ROUND_TIME` (12s de rodada),
+  `RUN_LIVES` (2 corações por jogador) e `MONSTER_HIT_COOLDOWN` (1,2s de
+  invulnerabilidade após ser tocado pelo monstro).
 - **`uuid()`:** gera id único com fallback — `crypto.randomUUID()` só existe em
   contexto seguro (HTTPS/localhost); em outros casos (ex.: acesso por IP da
   rede) usa `crypto.getRandomValues` ou timestamp+random. **Use sempre esta
@@ -415,31 +459,57 @@ PartyGame/
 - `onKeyDown`/`onKeyUp`: registram teclas e publicam imediatamente.
 
 ### `src/js/game.js` (simulação — só roda no HOST)
-- `initGame()`: cria jogadores, plataformas, escolhe quem inicia com a bomba.
-  O mapa vem de **`getPlayableMaps()`** (nativos + customizados do editor)
-  **filtrado por `room.mapSelection`** (chaves `native:<índice>` /
-  `<customId>`; vazio/nulo = todos) via `selectMapFromPool()`, que mantém o
-  ciclo sem repetição. Aplica as **regras da sala**: `playerSpeed` (escala
+- `initGame()`: cria jogadores, plataformas, escolhe quem inicia com a bomba
+  (modo bomb) ou com o ovo (modo egg). O mapa vem de
+  **`getPlayableMaps(mode)`** (nativos + customizados do editor, filtrados por
+  `room.mapSelection` — chaves `native:<índice>` / `<customId>`; vazio/nulo =
+  todos) via `selectMapFromPool()`, que mantém o ciclo sem repetição. No modo
+  egg o pool também aceita mapas customizados do modo bomb ("mesmos mapas do
+  bomb clássico"). Se o mapa tiver **`spawns[]`** (editor), o jogador de
+  índice i nasce em `spawns[i]`; senão usa o posicionamento padrão em linha.
+  Aplica as **regras da sala**: `playerSpeed` (escala
   `RUN_SPEED`/`DASH_SPEED`) e `scoreLimit` (substitui `MAX_SCORE` na detecção
   do campeão). Cada player da simulação copia `hat` e `cosmetics` do player da
-  sala (`player.cosmetics || []`) e o estado publica `map` com `name`, `bg`,
-  `platformColors` e **`music`** (para os clientes sincronizarem a música do
-  mapa). As plataformas são copiadas (`{...platform}`) preservando a cor
+  sala (`player.cosmetics || []`) e o estado publica `mode`, `map` com `name`,
+  `bg`, `platformColors` e **`music`** (para os clientes sincronizarem a música
+  do mapa). As plataformas são copiadas (`{...platform}`) preservando a cor
   individual dos mapas customizados.
 - `stepGame(dt)`: física (gravidade, fricção, dash), colisões com plataformas,
-  passagem da bomba, partículas.
+  passagem da bomba / roubo do ovo / perseguição do monstro, partículas. No
+  modo egg decrementa o contador global (`gs.bombTime`, máx `EGG_ROUND_TIME`) e
+  chama `explodeLowestScore()` ao zerar; no modo run decrementa o mesmo
+  contador (máx `RUN_ROUND_TIME`) e chama `finishRunRound(true)` ao zerar.
 - **Regras da bomba:** ao ser passada, o timer **não reseta e não ganha +2s** —
   apenas continua de onde estava (`target.bombTime = gs.bombTime`). Há um
   `passCooldown` de 0.6s no alvo para a troca ficar visível (senão a
   auto-passagem trocaria a bomba a cada frame).
+- **Regras do ovo (`explodeLowestScore`):** a cada ciclo de 10s explode entre
+  os vivos quem tem menor `eggScore` (empate = sorteio), grava a morte em
+  `gs.deathOrder`, incrementa `gs.explosionCount` (usado pelas abas para
+  sincronizar o som de explosão), dá o ovo a um vivo aleatório e reinicia o
+  contador. Com um único vivo, monta o resultado (vencedor = sobrevivente) e
+  agenda o fim (`roundOverTimer`). Segurar o ovo acumula +1 ponto a cada
+  `EGG_SCORE_TICK`; encostar no portador rouba o ovo (`transferEgg`).
+- **Regras do CORRA! (`monsterHits`/`finishRunRound`):** um jogador aleatório é
+  o monstro (`isMonster`, evitando repetir `state.lastMonsterId`); os demais
+  começam com `lives: RUN_LIVES`. O monstro encosta num corredor → perde 1
+  vida, ganha knockback e `hurtCooldown` de `MONSTER_HIT_COOLDOWN` (pisca no
+  render), e `gs.hitCount` sincroniza o som do golpe entre as abas
+  (`sounds/kill/kill4.mp3` via `playSfxFile`). Sem vidas,
+  explode como no bomb (`killRunner` → `deathOrder` + `explosionCount` +
+  partículas). A rodada acaba quando não sobrar corredor ou o tempo zera —
+  `finishRunRound` monta `result.ranking` (sobreviventes por vidas > monstro >
+  mortos em ordem inversa).
 - `endRound()`: explodiu → marca `running=false`, define o **resultado** com
   `winnerId`, `loserId`, `loserName`, grava `gs.roundResult`, publica o estado
   (para os clientes verem o fim da rodada) e chama `onRoundEnd`.
-- `awardRoundPoints(result)`: **placar de pontuação** — ordena os jogadores
-  (vencedor em 1º, demais por pontuação acumulada, perdedor da rodada em
-  último), dá `n − posição` pontos (n = nº de jogadores, sempre distintos),
-  persiste (`saveRooms`) e anexa `result.scoreboard = [{id, nickname, color,
-  score, place}]`.
+- `awardRoundPoints(result)`: **placar de pontuação** — no modo bomb ordena os
+  jogadores (vencedor em 1º, demais por pontuação acumulada, perdedor da rodada
+  em último); no modo egg usa `result.deathOrder` (**ordem de morte**: 1º a
+  morrer = 1pt … último vivo = n pts); no modo run usa `result.ranking`
+  (sobreviventes > monstro > mortos). Dá `n − posição` pontos (n = nº de
+  jogadores, sempre distintos), persiste (`saveRooms`) e anexa
+  `result.scoreboard = [{id, nickname, color, score, place}]`.
 - `spawnDashParticles`: cria as partículas cinzas do dash (sobem, somem).
 - **Rastro de "vento" no pé:** ao correr no chão, registra pontos no pé com o
   timestamp do jogo (`t: gs.time`); pontos antigos são podados após
@@ -448,8 +518,13 @@ PartyGame/
 ### `src/js/render.js` (desenho no canvas)
 - `drawScene()`: fundo, plataformas (cada uma pode ter **cor própria** —
   `platform.color`, usada pelos mapas do editor; fallback: cicla
-  `platformColors`), partículas, personagens (com chapéu), bombas, dash
-  indicator, **timer central**, **coroa do líder** e overlay de FPS/ping.
+  `platformColors`), partículas, personagens (com chapéu), bombas, ovo
+  (`drawEgg`, imagem `state.eggImage` carregada por `loadEggImage()`), dash
+  indicator, **corações do modo run** (`drawHearts` — 2 círculos vermelhos
+  abaixo de cada corredor, apagando conforme perde vidas), **timer central**,
+  **mostradores de pontos do modo egg**
+  (`drawEggScores` — um por jogador, na cor dele, nos quatro cantos), **coroa
+  do líder** e overlay de FPS/ping.
 - `drawLeaderCrown()`: coroa dourada **brilhante** (pulso de `shadowBlur`)
   acima do **líder** (único jogador com maior `score` > 0), desenhada após os
   personagens.
@@ -460,7 +535,9 @@ PartyGame/
   (corpo estica, pés recolhidos). O **seu** personagem (e **todos os jogadores
   locais** da aba) recebe uma **barra horizontal sob os pés** (16×4) na cor
   selecionada: verde pulsante quando o dash está pronto, amarela preenchendo
-  durante o cooldown (`drawDashIndicator`).
+  durante o cooldown (`drawDashIndicator`). No modo run, o **monstro** tem
+  corpo roxo, chifres, olhos vermelhos, boca serrilhada e aura pulsante;
+  corredores com `hurtCooldown > 0` piscam (invulnerabilidade).
 - `drawBombTimer()`: **topo central** da tela, fundo escuro com borda branca e
   fonte pixel ("Press Start 2P"). Cor por urgência: verde (>66%), amarelo
   (33–66%), vermelho (≤33%, com pulso de escala).
@@ -732,16 +809,21 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
      troca (`room.mode`), e a classe `mode-<id>` no `#screen-lobby` alimenta a
      variável CSS `--mode-color` — a tela tem `transition` de ~0,6s, então as
      cores (bordas, títulos) animam ao trocar de modo. Os chips ficam **direto
-     no lobby**, junto do botão **"Mapas & Regras"** (só aparece para o host).
+     no lobby**, junto do botão **"Regras do Jogo"** (só aparece para o host).
      A navegação por controle no lobby segue esta ordem fixa (`getFocusables`):
-     **⚙ configurações → "Mapas & Regras" → chips de modo → seletores de
+     **⚙ configurações → "Regras do Jogo" → chips de modo → seletores de
      controle/teclado dos jogadores → Iniciar partida / Convidar / Sair**
      (e o caminho reverso percorre os mesmos itens ao contrário); após clicar
      em chip ou card de mapa, `renderUiFocuses()` é chamada para o destaque de
-     foco não sumir até o próximo movimento.
+     foco não sumir até o próximo movimento. O botão **"Regras do Jogo"** só pode
+     ser pressionado pelo **controle do host** (ou mouse): se o gamepad de outro
+     jogador confirmar sobre ele, `activateUiFocus` exibe o aviso vermelho
+     "Somente o host pode alterar as regras do jogo!" (`showLobbyAlert`) e não
+     abre o painel.
    - `renderLobbyMaps()` e `renderLobbyRules()` preenchem o modal
      **`#hostConfigPanel`** ("Mapas & Regras da partida"), que **não fica na
-     tela do lobby** — abre/fecha pelo botão do host, pelo ✕, pelo fundo, por
+     tela do lobby** — abre/fecha pelo botão **"Regras do Jogo"** do host, pelo
+     ✕, pelo fundo, por
      Escape ou pelo botão B do controle. Mapas: grade com pré-visualização
      (mini-canvas desenhado por `drawMapPreview`) separada em **nativos** e
       **meus mapas** (cada grupo com borda própria); o host clica para
@@ -772,13 +854,16 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
 ### `src/js/audio.js`
 - Música do menu (aleatória de `musics/menu`) e do jogo; troca automática entre
   telas. Volume respeita a config `getMusicVolume` (padrão 70).
-- **`playGameMusic(map)`:** resolve a faixa da partida a partir do mapa —
+- **`playGameMusic(map, mode)`:** resolve a faixa da partida — no modo `run`
+  toca sempre `musics/game-RUN/gmr1.mp3`; nos demais, a partir do mapa:
   `music.type === 'native'` toca a faixa nativa indicada (`gm1–gm11`),
   `'custom'` busca o data URL em `bombPartyCustomMusicsV1` pelo `music.id`
   (música personalizada do editor de mapas) e, sem configuração/falha, sorteia
   uma faixa aleatória. Só troca o áudio quando a fonte muda (comparação de
   `src`). `getNativeGameTracks()` expõe a lista para o editor.
-- Efeitos: `playClick` (botões, via WebAudio), `playPop`, e `playSound(nome)`
+- Efeitos: `playClick` (botões, via WebAudio), `playPop`, `playSfxFile(src)`
+  (toca um arquivo específico — usado pelo golpe do monstro no modo run) e
+  `playSound(nome)`
   (agora **async**) que toca um mp3 aleatório do grupo. Grupos definidos em
   `SOUND_GROUPS`: `start-countdown` → `sounds/countdown/countdown.mp3`,
   `start-menu` → `sounds/countdown/start-menu.mp3`, `victory`, `kill` e
@@ -802,10 +887,12 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
   `platformColors` (array de cores para as plataformas) e `platforms` (array de
   retângulos `{x, y, width, height}`). Mapas: Clássico, Torres, Escadas, Ilhas,
   Arena.
-- `getPlayableMaps()`: devolve os nativos + os **mapas customizados** salvos no
-  `localStorage` cujo `mode` está em `GAME_MODES`. Mapas customizados têm
-  `color` por plataforma, `music` (configuração de música do mapa) e
-  `customId` (o id original — usado pela seleção de mapas do lobby).
+- `getPlayableMaps(requestedMode)`: devolve os nativos + os **mapas
+  customizados** salvos no `localStorage` cujo `mode` está em `GAME_MODES`
+  (sem argumento = todos; com modo, filtra — e o modo egg também aceita mapas
+  customizados do modo bomb). Mapas customizados têm `color` por plataforma,
+  `spawns[]` opcional, `music` (configuração de música do mapa) e `customId`
+  (o id original — usado pela seleção de mapas do lobby).
 - Seleção aleatória sem repetição: o jogo cicla por todos os mapas do pool
   antes de repetir qualquer um.
 - Mapas Ilhas e Ziguezague foram redesenhados usando imagens de referência
@@ -820,13 +907,15 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
   mapa igual ao `render.js` (fundo + plataformas com contorno `#222`).
 - **Ferramentas:** *Selecionar* (clica para selecionar, arrasta para mover,
   alças nos 4 cantos para redimensionar), *+ Plataforma* (arraste para desenhar
-  um retângulo; clique curto cria uma plataforma padrão 200×24), *Duplicar* e
+  um retângulo; clique curto cria uma plataforma padrão 200×24), *🚩 Spawns*
+  (clique marca onde o jogador nasce — P1–P4 na cor de `SPAWN_COLORS`, arraste
+  move, Delete/Excluir remove o selecionado), *Duplicar* e
   *Excluir* (botão ou tecla Delete/Backspace). Botões que agem sobre a seleção
   (*Duplicar*, *Excluir*) exibem o aviso "Nenhuma plataforma selecionada." no
   `mapEditorNotice` quando acionados sem seleção. Todos os avisos do editor
   também aparecem num **toast fixo** no topo da tela (`#mapEditorToast`,
   vermelho, some após ~4,5s — helper `showEditorNotice`). Limite de
-  `MAX_MAP_PLATFORMS` (60) plataformas.
+  `MAX_MAP_PLATFORMS` (60) plataformas e de `MAX_SPAWNS` (4) spawns.
 - **Painel de propriedades:** X, Y, Largura, Altura (inputs numéricos) e cor
   individual da plataforma (color picker); cor do fundo do mapa; nome do mapa;
   **seletor de modo de jogo** (`GAME_MODES`) — define para qual modo o arquivo
@@ -842,8 +931,8 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
   `bombPartyCustomMapsV1`; lista "Meus mapas" com Editar/Excluir (excluir também
   remove a música customizada se nenhum outro mapa a usa).
 - **Exportar:** baixa `<nome>.pgmap` — JSON `{ format: 'partygame-map',
-  version, mode, name, bg, platforms[], music }`; se a música for personalizada,
-  o data URL é **embutido no arquivo** (portável entre máquinas).
+  version, mode, name, bg, platforms[], spawns[], music }`; se a música for
+  personalizada, o data URL é **embutido no arquivo** (portável entre máquinas).
 - **Importar:** valida `format`, modo suportado e plataformas (sanitizadas);
   música embutida é gravada no store local com novo id.
 - Ao sair do editor, o preview de áudio para (evento
@@ -925,7 +1014,7 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
 | `bombPartyCosmeticsV1`       | Store dos cosméticos customizados criados (`{ id: { id, name, type, data/code, createdAt } }`) |
 | `bombPartyCosmeticsSync`     | Timestamp da última gravação dos cosméticos (dispara sync entre abas via evento `storage`) |
 | `bombPartyEquipped_<deviceId>` | JSON com a lista de cosméticos equipados (`[{ id, offsetX, offsetY, scale }]`, máx. 5) |
-| `bombPartyCustomMapsV1`      | Array de mapas criados no editor (`{ id, name, mode, bg, platforms[{x,y,width,height,color}], music, updatedAt }`) |
+| `bombPartyCustomMapsV1`      | Array de mapas criados no editor (`{ id, name, mode, bg, platforms[{x,y,width,height,color}], spawns[{x,y}] (opcional, máx. 4), music, updatedAt }`) |
 | `bombPartyCustomMusicsV1`    | Store de músicas personalizadas dos mapas (`{ id: { name, data: dataURL } }`, máx. 2,5MB cada) |
 | `bombPartyTouchEnabled_<id>` | "1"/"0" — controles touch habilitados              |
 | `bombPartyTouchStyle_<id>`   | Estilo do touch: "arrows" ou "analog"              |
@@ -971,19 +1060,37 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
   são engolidos em jogo; não passar referências internas do jogo para ele
   (só o objeto `player` enxuto).
 - **Mapas customizados:** o pool de partidas vem sempre de
-  `getPlayableMaps()` (nativos + custom com `mode` suportado). Plataformas de
-  mapas do editor têm `color` própria — o `render.js` usa
+  `getPlayableMaps(mode)` (nativos + custom com `mode` suportado; no modo egg
+  também entram os custom do modo bomb). Plataformas de mapas do editor têm
+  `color` própria — o `render.js` usa
   `platform.color || platformColors[...]`. A música do mapa é publicada em
-  `gs.map.music` e cada aba resolve a fonte localmente (`playGameMusic(map)`);
+  `gs.map.music` e cada aba resolve a fonte localmente
+  (`playGameMusic(map, mode)` — o modo run ignora o mapa e toca `gmr1.mp3`);
   músicas personalizadas são data URLs em `bombPartyCustomMusicsV1`
   (compartilhado entre abas). Arquivos `.pgmap` embutem a música (portátil);
   ao importar, gravar no store local com novo id. Novos modos de jogo devem ser
   adicionados a `GAME_MODES` (constants.js) para aparecerem no editor e
   habilitarem arquivos daquele modo.
+- **Modo Pegue o Ovo:** o estado publicado carrega `mode: 'egg'`,
+  `timerMax` (10), `deathOrder[]` e `explosionCount` — as abas tocam o som de
+  explosão comparando `explosionCount` (`playDeathSoundIfNew` no main.js),
+  pois explosões intermediárias não criam `roundOverTimer`. Os pontos de rodada
+  (`eggScore`) são só visuais/eliminatórios; o placar persistente usa a ordem
+  de morte via `result.deathOrder` em `awardRoundPoints`. Spawns do mapa
+  (`spawns[]`) são opcionais — sem eles vale o posicionamento padrão.
+- **Modo CORRA!:** mesmo esquema de sincronização do egg (`explosionCount`
+  para explosões + `hitCount` para os golpes do monstro, ambos sem
+  `roundOverTimer`). O fallback que redistribui bomba/ovo quando o portador
+  some **não roda** no modo run (`updatePlayers` retorna antes). O ranking da
+  rodada vai pronto em `result.ranking` (sobreviventes > monstro > mortos) e
+  `awardRoundPoints` o consome direto.
 - **Gamepad:** a atribuição é por playerId e armazenada por aba; o input lê o
-  gamepad do player atribuído e mescla com o teclado. **Menus:** `getUiPad` só
-  devolve um gamepad atribuído a um player **desta aba** (`localPlayerIds`) —
-  não usar `connectedGamepads()[0]`, senão o controle age em todas as abas.
+  gamepad do player atribuído e mescla com o teclado. **Menus:** `getUiPads` só
+  devolve gamepads atribuídos a players **desta aba** (`localPlayerIds`) — não
+  usar `connectedGamepads()[0]`, senão o controle age em todas as abas.
+  Exceção: na **tela inicial** (sem sala e sem player), todos os controles
+  conectados navegam o mesmo cursor (chave de foco `'kb'`) — qualquer um pode
+  mover/confirmar.
 - **Jogadores locais (`localPlayerIds`):** cada aba controla vários players
   (host no teclado + jogadores via pads). Sempre sincronizar via
   `saveLocalPlayers()` ao criar/entrar/adicionar/sair; `heartbeat` e `leaveRoom`

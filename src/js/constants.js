@@ -71,9 +71,19 @@ export const DASH_ACTIVE_TIME = 0.18;
 export const EXPLOSION_COLORS = ['#3a3a3a', '#c1121f', '#f77f00', '#fcbf49'];
 export const GAME_MODE_NAME = '💣 Bomb Clássico';
 export const GAME_MODES = [
-  { id: 'bomb', name: '💣 Bomb Clássico', color: '#ff6b6b' }
+  { id: 'bomb', name: '💣 Bomb Clássico', color: '#ff6b6b' },
+  { id: 'egg', name: '🥚 Pegue o Ovo', color: '#ffd23f' },
+  { id: 'run', name: '🏃 CORRA!', color: '#b5179e' }
 ];
 export const BOMB_IMAGE_PATH = 'src/Images/BombGame/bomb.png';
+export const EGG_IMAGE_PATH = 'src/Images/egg/egg.png';
+export const EGG_ROUND_TIME = 10;
+export const EGG_SCORE_TICK = 0.2;
+export const RUN_ROUND_TIME = 12;
+export const RUN_LIVES = 2;
+export const MONSTER_HIT_COOLDOWN = 1.2;
+export const MAX_SPAWNS = 4;
+export const SPAWN_COLORS = ['#ff6b6b', '#4dabf7', '#51cf66', '#ff922b'];
 export const TRAIL_LIFE = 0.35;
 
 export const controlSets = [

@@ -78,15 +78,23 @@ function customToPlayable(entry) {
     bg: entry.bg || '#bfe8ff',
     platformColors: entry.platformColors || ['#a3d97a', '#7fd3f2', '#f6c768', '#f2a1a1'],
     platforms: (entry.platforms || []).map(platform => ({ ...platform })),
+    spawns: (entry.spawns || []).map(spawn => ({ ...spawn })),
     music: entry.music || null,
     custom: true,
     customId: entry.id
   };
 }
 
-export function getPlayableMaps() {
+export function getPlayableMaps(requestedMode) {
+  const accepts = entry => {
+    const mode = entry.mode || 'bomb';
+    if (!requestedMode || requestedMode === mode) return true;
+    // "Pegue o Ovo" e "CORRA!" usam os mesmos mapas do bomb clássico
+    return (requestedMode === 'egg' || requestedMode === 'run') && mode === 'bomb';
+  };
   const customs = loadCustomMaps()
     .filter(entry => SUPPORTED_MODES.has(entry.mode || 'bomb'))
+    .filter(accepts)
     .map(customToPlayable);
   return MAPS.concat(customs);
 }

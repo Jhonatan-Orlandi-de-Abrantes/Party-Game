@@ -4,7 +4,7 @@ import * as storage from './storage.js';
 import * as rooms from './rooms.js';
 import * as input from './input.js';
 import * as game from './game.js';
-import { drawScene, loadBombImage, setResolutionScale } from './render.js';
+import { drawScene, loadBombImage, loadEggImage, setResolutionScale } from './render.js';
 import * as audio from './audio.js';
 import { spawnConfetti } from './effects.js';
 import { loadAllCosmeticImages } from './cosmetics.js';
@@ -53,6 +53,28 @@ function showRoundResult(result) {
 }
 
 function playDeathSoundIfNew(st) {
+  if (!st) return;
+  if (st.mode === 'egg' || st.mode === 'run') {
+    const count = st.explosionCount || 0;
+    if (state.lastExplosionCount == null) {
+      state.lastExplosionCount = count;
+    } else if (count !== state.lastExplosionCount) {
+      state.lastExplosionCount = count;
+      audio.playSound('kill');
+      if (st.roundOverTimer != null) state.deathSoundPlayed = true;
+      return;
+    }
+  }
+  if (st.mode === 'run') {
+    const hits = st.hitCount || 0;
+    if (state.lastRunHitCount == null) {
+      state.lastRunHitCount = hits;
+    } else if (hits !== state.lastRunHitCount) {
+      state.lastRunHitCount = hits;
+      audio.playSfxFile('sounds/kill/kill4.mp3');
+      return;
+    }
+  }
   if (state.deathSoundPlayed) return;
   if (st && st.roundOverTimer != null && st.roundOverTimer > 0) {
     state.deathSoundPlayed = true;
@@ -118,18 +140,32 @@ function becomeSimulator() {
     state.gameState = st;
     state.accTime = 0;
     storage.publishGameState();
-    audio.playGameMusic(st.map);
+    audio.playGameMusic(st.map, st.mode);
     startSimLoop();
     return;
   }
   if (state.currentRoom && state.currentRoom.started && isHost() && (!st || !st.running)) {
     game.initGame();
     storage.publishGameState();
-    audio.playGameMusic(state.gameState.map);
+    audio.playGameMusic(state.gameState.map, state.gameState.mode);
     startSimLoop();
     return;
   }
   startRenderLoop();
+}
+
+function confirmModalOpen() {
+  return !!(refs.confirmModal && !refs.confirmModal.classList.contains('hidden'));
+}
+
+function publishHeartbeat() {
+  const now = Date.now();
+  if (now - state.lastPublishTime >= PUBLISH_INTERVAL) {
+    state.lastPublishTime = now;
+    state.gameState.t = now;
+    state.gameState.rev = (state.gameState.rev || 0) + 1;
+    storage.publishGameState();
+  }
 }
 
 function gameLoop(time) {
@@ -154,6 +190,13 @@ function gameLoop(time) {
   }
   state.lastFrameTime = time;
 
+  if (confirmModalOpen()) {
+    state.gameState.lastTime = time;
+    publishHeartbeat();
+    state.animationFrameId = requestAnimationFrame(gameLoop);
+    return;
+  }
+
   const frameDt = Math.min(0.1, (time - (state.gameState.lastTime || time)) / 1000);
   state.gameState.lastTime = time;
   state.accTime = Math.min(0.25, (state.accTime || 0) + frameDt);
@@ -163,13 +206,7 @@ function gameLoop(time) {
     if (!state.gameState.running) break;
   }
 
-  const now = Date.now();
-  if (now - state.lastPublishTime >= PUBLISH_INTERVAL) {
-    state.lastPublishTime = now;
-    state.gameState.t = now;
-    state.gameState.rev = (state.gameState.rev || 0) + 1;
-    storage.publishGameState();
-  }
+  publishHeartbeat();
 
   drawScene();
   updateHud();
@@ -203,7 +240,7 @@ function clientRenderLoop() {
   if (st && st.rev !== state.lastSeenRev) {
     state.lastSeenRev = st.rev;
     state.gameState = st;
-    audio.playGameMusic(st.map);
+    audio.playGameMusic(st.map, st.mode);
     drawScene();
     updateHud();
   }
@@ -255,6 +292,8 @@ function enterGameScreen() {
   stopCountdown();
   state.endShown = false;
   state.deathSoundPlayed = false;
+  state.lastExplosionCount = null;
+  state.lastRunHitCount = null;
   state.lastSeenRev = -1;
   state.accTime = 0;
   state.lastFrameTime = 0;
@@ -266,7 +305,7 @@ function enterGameScreen() {
   refs.messageBox.classList.remove('victory');
   closeSettingsPanel();
   applyResolution();
-  audio.playGameMusic(state.gameState && state.gameState.map);
+  audio.playGameMusic(state.gameState && state.gameState.map, state.gameState && state.gameState.mode);
   showScreen('game');
   input.publishLocalInputs();
   if (document.visibilityState === 'visible') {
@@ -490,6 +529,19 @@ window.addEventListener('bombparty:resolutionchange', () => {
 document.addEventListener('keydown', input.onKeyDown);
 document.addEventListener('keyup', input.onKeyUp);
 
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Escape' || state.currentScreen !== 'game') return;
+  if (confirmModalOpen()) {
+    event.preventDefault();
+    refs.confirmCancelBtn.click();
+    return;
+  }
+  if (state.endShown) return;
+  if (document.querySelector('.key-btn.recording')) return;
+  if (document.querySelector('.modal:not(.hidden)')) return;
+  refs.gameQuitBtn.click();
+});
+
 document.addEventListener('pointerdown', audio.unlockAudio, { once: true });
 document.addEventListener('click', event => {
   if (event.target.closest('button')) audio.playClick();
@@ -639,9 +691,7 @@ function getUiPads() {
   const handled = new Set();
   state.uiPadPlayerId = null;
   if (!state.currentRoom && !state.myPlayerId) {
-    if (pads.length > 0) {
-      result.push({ pad: pads[0], playerId: null });
-    }
+    pads.forEach(pad => result.push({ pad, playerId: null }));
     return result;
   }
   for (const id of localIds) {
@@ -834,6 +884,7 @@ function initPage() {
 }
 
 loadBombImage();
+loadEggImage();
 loadAllCosmeticImages();
 onCosmeticsSync(() => loadAllCosmeticImages());
 initUi();

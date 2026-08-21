@@ -19,7 +19,12 @@ import {
   DASH_SPEED,
   DASH_ACTIVE_TIME,
   TRAIL_LIFE,
-  DEFAULT_ROOM_SETTINGS
+  DEFAULT_ROOM_SETTINGS,
+  EGG_ROUND_TIME,
+  EGG_SCORE_TICK,
+  RUN_ROUND_TIME,
+  RUN_LIVES,
+  MONSTER_HIT_COOLDOWN
 } from './constants.js';
 
 const FLOOR_Y = 540;
@@ -42,6 +47,18 @@ function roomSettings() {
   return { ...DEFAULT_ROOM_SETTINGS, ...(state.currentRoom && state.currentRoom.settings) };
 }
 
+function gameMode() {
+  return (state.currentRoom && state.currentRoom.mode) || 'bomb';
+}
+
+function isEggMode() {
+  return gameMode() === 'egg';
+}
+
+function isRunMode() {
+  return gameMode() === 'run';
+}
+
 function selectMapFromPool(pool) {
   const keyed = pool.map((map, index) => ({ map, key: map.custom ? map.customId : 'native:' + index }));
   const selection = state.currentRoom && state.currentRoom.mapSelection;
@@ -61,31 +78,51 @@ function selectMapFromPool(pool) {
 }
 
 export function initGame() {
+  const eggMode = isEggMode();
+  const runMode = isRunMode();
+  const chosenMap = selectMapFromPool(getPlayableMaps(gameMode()));
+  const spawns = Array.isArray(chosenMap.spawns) ? chosenMap.spawns : [];
   const players = state.currentRoom.players.map((player, index) => {
+    const spawn = spawns[index];
     return {
       id: player.id,
       nickname: player.nickname,
       color: player.color,
-      x: 120 + index * 180,
-      y: 320,
+      x: spawn && Number.isFinite(spawn.x) ? spawn.x : 120 + index * 180,
+      y: spawn && Number.isFinite(spawn.y) ? spawn.y : 320,
       vx: 0,
       vy: 0,
       onGround: false,
       alive: true,
       hasBomb: false,
+      hasEgg: false,
+      eggScore: 0,
+      eggAcc: 0,
       bombTime: MAX_BOMB_TIME,
       dashCooldown: 0,
       dashActive: false,
       dashTime: 0,
       passCooldown: 0,
       lastPasser: null,
+      isMonster: false,
+      lives: RUN_LIVES,
+      hurtCooldown: 0,
       hat: player.hat,
       cosmetics: player.cosmetics || [],
       controls: controlSets[index] || controlSets[0]
     };
   });
   let firstHolder;
-  if (state.lastBombHolder) {
+  let monsterIndex = -1;
+  if (runMode) {
+    let candidates = players;
+    if (state.lastMonsterId) {
+      const filtered = players.filter(p => p.id !== state.lastMonsterId);
+      if (filtered.length > 0) candidates = filtered;
+    }
+    monsterIndex = players.indexOf(candidates[Math.floor(Math.random() * candidates.length)]);
+    firstHolder = -1;
+  } else if (state.lastBombHolder && !eggMode) {
     const candidates = players.filter(p => p.id !== state.lastBombHolder);
     firstHolder = candidates.length > 0
       ? players.indexOf(candidates[Math.floor(Math.random() * candidates.length)])
@@ -93,11 +130,18 @@ export function initGame() {
   } else {
     firstHolder = Math.floor(Math.random() * players.length);
   }
-  players[firstHolder].hasBomb = true;
-  players[firstHolder].lastPasser = players[firstHolder].id;
+  if (runMode) {
+    players[monsterIndex].isMonster = true;
+    players[monsterIndex].lives = 0;
+  } else if (eggMode) {
+    players[firstHolder].hasEgg = true;
+  } else {
+    players[firstHolder].hasBomb = true;
+    players[firstHolder].lastPasser = players[firstHolder].id;
+  }
   lastTrailPoints.clear();
-  const chosenMap = selectMapFromPool(getPlayableMaps());
   state.gameState = {
+    mode: gameMode(),
     players,
     trails: [],
     platforms: chosenMap.platforms.map(platform => ({ ...platform })),
@@ -107,12 +151,21 @@ export function initGame() {
       platformColors: chosenMap.platformColors || ['#a3d97a', '#7fd3f2', '#f6c768', '#f2a1a1'],
       music: chosenMap.music || null
     },
-    bombOwnerId: players[firstHolder].id,
-    bombTime: MAX_BOMB_TIME,
+    bombOwnerId: runMode ? null : players[firstHolder].id,
+    eggOwnerId: eggMode ? players[firstHolder].id : null,
+    monsterId: runMode ? players[monsterIndex].id : null,
+    hitCount: 0,
+    bombTime: runMode ? RUN_ROUND_TIME : eggMode ? EGG_ROUND_TIME : MAX_BOMB_TIME,
+    timerMax: runMode ? RUN_ROUND_TIME : eggMode ? EGG_ROUND_TIME : MAX_BOMB_TIME,
+    deathOrder: [],
     time: 0,
     running: true,
     winner: null,
-    message: 'A partida começou! Passe a bomba para alguém antes que ela exploda.',
+    message: runMode
+      ? `${players[monsterIndex].nickname} é o monstro! Corram!`
+      : eggMode
+        ? 'Pegue o ovo! Quem tiver menos pontos quando o tempo zerar explode.'
+        : 'A partida começou! Passe a bomba para alguém antes que ela exploda.',
     rev: 0,
     t: Date.now(),
     roundResult: null,
@@ -136,6 +189,18 @@ export function stepGame(dt) {
   updatePlayers(dt);
   collidePlayers();
   updateParticles(dt);
+  if (gs.mode === 'egg' && gs.running && gs.roundOverTimer == null) {
+    gs.bombTime = Math.max(0, (gs.bombTime || 0) - dt);
+    if (gs.bombTime <= 0) {
+      explodeLowestScore();
+    }
+  }
+  if (gs.mode === 'run' && gs.running && gs.roundOverTimer == null) {
+    gs.bombTime = Math.max(0, (gs.bombTime || 0) - dt);
+    if (gs.bombTime <= 0) {
+      finishRunRound(true);
+    }
+  }
 }
 
 function updatePlayers(dt) {
@@ -160,6 +225,9 @@ function updatePlayers(dt) {
     }
     if (player.passCooldown > 0) {
       player.passCooldown = Math.max(0, player.passCooldown - dt);
+    }
+    if (player.hurtCooldown > 0) {
+      player.hurtCooldown = Math.max(0, player.hurtCooldown - dt);
     }
 
     let move = 0;
@@ -232,7 +300,7 @@ function updatePlayers(dt) {
       }
     }
 
-    if (player.hasBomb) {
+    if (player.hasBomb && gs.mode !== 'egg') {
       player.bombTime = Math.max(0, player.bombTime - dt);
       gs.bombTime = player.bombTime;
       gs.bombOwnerId = player.id;
@@ -241,33 +309,69 @@ function updatePlayers(dt) {
         return;
       }
     }
+
+    if (player.hasEgg) {
+      player.eggAcc = (player.eggAcc || 0) + dt;
+      while (player.eggAcc >= EGG_SCORE_TICK) {
+        player.eggAcc -= EGG_SCORE_TICK;
+        player.eggScore = (player.eggScore || 0) + 1;
+      }
+      gs.eggOwnerId = player.id;
+      gs.bombOwnerId = player.id;
+    }
   });
 
-  const holder = gs.players.find(player => player.hasBomb && player.alive);
+  if (gs.mode === 'run') return;
+  const itemFlag = gs.mode === 'egg' ? 'hasEgg' : 'hasBomb';
+  const holder = gs.players.find(player => player[itemFlag] && player.alive);
   if (gs.roundOverTimer == null && !holder) {
     const alivePlayers = gs.players.filter(player => player.alive);
     if (alivePlayers.length > 0) {
-      alivePlayers[0].hasBomb = true;
-      alivePlayers[0].bombTime = MAX_BOMB_TIME;
-      gs.bombOwnerId = alivePlayers[0].id;
+      const next = alivePlayers[Math.floor(Math.random() * alivePlayers.length)];
+      next[itemFlag] = true;
+      if (gs.mode === 'egg') {
+        next.passCooldown = 0.6;
+        gs.eggOwnerId = next.id;
+      } else {
+        next.bombTime = MAX_BOMB_TIME;
+        gs.bombOwnerId = next.id;
+      }
     }
   }
 }
 
 function collidePlayers() {
   const gs = state.gameState;
+  if (gs.mode === 'run') {
+    monsterHits();
+    return;
+  }
+  const itemFlag = gs.mode === 'egg' ? 'hasEgg' : 'hasBomb';
   gs.players.forEach(player => {
-    if (!player.alive || !player.hasBomb) return;
+    if (!player.alive || !player[itemFlag]) return;
     if (player.passCooldown > 0) return;
     gs.players.forEach(target => {
       if (target.id === player.id || !target.alive) return;
       const dx = target.x - player.x;
       const dy = target.y - player.y;
       if (Math.hypot(dx, dy) < BOMB_PASS_DISTANCE) {
-        transferBomb(player, target);
+        if (gs.mode === 'egg') transferEgg(player, target);
+        else transferBomb(player, target);
       }
     });
   });
+}
+
+function transferEgg(holder, target) {
+  if (!holder.hasEgg || !target.alive) return;
+  holder.hasEgg = false;
+  holder.eggAcc = 0;
+  target.hasEgg = true;
+  target.passCooldown = 0.6;
+  const gs = state.gameState;
+  gs.eggOwnerId = target.id;
+  gs.bombOwnerId = target.id;
+  playPop();
 }
 
 function transferBomb(holder, target) {
@@ -280,6 +384,77 @@ function transferBomb(holder, target) {
   gs.bombOwnerId = target.id;
   target.lastPasser = holder.id;
   playPop();
+}
+
+function monsterHits() {
+  const gs = state.gameState;
+  const monster = gs.players.find(player => player.isMonster && player.alive);
+  if (!monster) return;
+  gs.players.forEach(target => {
+    if (!target.alive || target.isMonster || target.hurtCooldown > 0) return;
+    if (Math.hypot(target.x - monster.x, target.y - monster.y) >= BOMB_PASS_DISTANCE) return;
+    target.lives -= 1;
+    target.hurtCooldown = MONSTER_HIT_COOLDOWN;
+    gs.hitCount = (gs.hitCount || 0) + 1;
+    const angle = Math.atan2(target.y - monster.y, target.x - monster.x);
+    target.vx += Math.cos(angle) * 420;
+    target.vy = Math.min(target.vy, -240);
+    if (target.lives <= 0) killRunner(target);
+  });
+}
+
+function killRunner(target) {
+  const gs = state.gameState;
+  target.alive = false;
+  target.lives = 0;
+  target.hasBomb = false;
+  target.hasEgg = false;
+  gs.deathOrder.push(target.id);
+  gs.explosionCount = (gs.explosionCount || 0) + 1;
+  spawnExplosion(target);
+  checkRunRoundEnd(false);
+}
+
+function checkRunRoundEnd(timeUp) {
+  const gs = state.gameState;
+  if (gs.roundOverTimer != null) return;
+  const runnersAlive = gs.players.filter(player => player.alive && !player.isMonster);
+  if (timeUp || runnersAlive.length === 0) finishRunRound(timeUp);
+}
+
+function finishRunRound(timeUp) {
+  const gs = state.gameState;
+  if (gs.roundOverTimer != null) return;
+  const monster = gs.players.find(player => player.isMonster) || null;
+  const survivors = gs.players
+    .filter(player => player.alive && !player.isMonster)
+    .sort((a, b) => b.lives - a.lives);
+  const byId = new Map(gs.players.map(player => [player.id, player]));
+  const deadReversed = gs.deathOrder.slice().reverse().map(id => byId.get(id)).filter(Boolean);
+  const ranked = [];
+  [...survivors, monster, ...deadReversed].forEach(player => {
+    if (player && !ranked.includes(player)) ranked.push(player);
+  });
+  const top = ranked[0] || null;
+  const firstDead = byId.get(gs.deathOrder[0]) || null;
+  state.lastMonsterId = monster ? monster.id : null;
+  const survivorNames = survivors.map(player => player.nickname).join(', ');
+  gs.pendingResult = {
+    title: timeUp ? 'Tempo esgotado!' : 'O monstro venceu!',
+    text: timeUp
+      ? `O tempo acabou!<br>Sobreviveram: <strong>${survivorNames || 'Ninguém'}</strong>`
+      : `<strong>${monster ? monster.nickname : 'O monstro'}</strong> devorou todos os jogadores!`,
+    winnerId: top ? top.id : null,
+    winnerName: top ? top.nickname : 'Ninguém',
+    loserId: firstDead ? firstDead.id : null,
+    loserName: firstDead ? firstDead.nickname : null,
+    ranking: ranked.map(player => player.id),
+    deathOrder: [...gs.deathOrder]
+  };
+  gs.message = timeUp
+    ? `Acabou o tempo! ${survivors.length > 0 ? survivorNames + ' sobreviveram!' : 'O monstro pegou todo mundo!'}`
+    : `${monster ? monster.nickname : 'O monstro'} pegou todo mundo!`;
+  gs.roundOverTimer = DEATH_ANIM_TIME;
 }
 
 function endRound(explodedPlayer) {
@@ -306,6 +481,54 @@ function endRound(explodedPlayer) {
   state.deathSoundPlayed = true;
 }
 
+function explodeLowestScore() {
+  const gs = state.gameState;
+  if (!gs || gs.roundOverTimer != null) return;
+  const alive = gs.players.filter(player => player.alive);
+  if (alive.length <= 1) {
+    gs.bombTime = EGG_ROUND_TIME;
+    return;
+  }
+  const minScore = Math.min(...alive.map(player => player.eggScore || 0));
+  const tied = alive.filter(player => (player.eggScore || 0) === minScore);
+  const victim = tied[Math.floor(Math.random() * tied.length)];
+  victim.alive = false;
+  victim.hasEgg = false;
+  victim.hasBomb = false;
+  gs.deathOrder.push(victim.id);
+  gs.explosionCount = (gs.explosionCount || 0) + 1;
+  spawnExplosion(victim);
+
+  const remaining = gs.players.filter(player => player.alive);
+  if (remaining.length <= 1) {
+    const survivor = remaining[0] || null;
+    state.lastBombHolder = victim.id;
+    const firstDead = gs.players.find(player => player.id === gs.deathOrder[0]);
+    gs.pendingResult = {
+      title: 'Fim da rodada!',
+      text: survivor
+        ? `<strong>${survivor.nickname}</strong> ficou vivo por último!<br>Primeiro a explodir: <strong>${firstDead ? firstDead.nickname : 'Ninguém'}</strong>`
+        : 'Todos explodiram!',
+      winnerId: survivor ? survivor.id : null,
+      winnerName: survivor ? survivor.nickname : 'Ninguém',
+      loserId: firstDead ? firstDead.id : null,
+      loserName: firstDead ? firstDead.nickname : null,
+      deathOrder: [...gs.deathOrder]
+    };
+    gs.message = `${victim.nickname} explodiu! ${survivor ? survivor.nickname + ' venceu!' : ''}`.trim();
+    gs.roundOverTimer = DEATH_ANIM_TIME;
+    return;
+  }
+
+  const next = remaining[Math.floor(Math.random() * remaining.length)];
+  next.hasEgg = true;
+  next.passCooldown = 0.6;
+  gs.eggOwnerId = next.id;
+  gs.bombOwnerId = next.id;
+  gs.bombTime = EGG_ROUND_TIME;
+  gs.message = `${victim.nickname} explodiu! O ovo agora está com ${next.nickname}.`;
+}
+
 function finalizeRound() {
   const gs = state.gameState;
   const result = gs.pendingResult;
@@ -329,17 +552,38 @@ function awardRoundPoints(result) {
   const players = [...room.players];
   const winner = players.find(player => player.id === result.winnerId);
   if (!winner) return;
-  const rest = players
-    .filter(player => player.id !== result.winnerId)
-    .sort((a, b) => ((b.score || 0) - (a.score || 0)) || (a.joinedAt - b.joinedAt));
-  if (result.loserId) {
-    const index = rest.findIndex(player => player.id === result.loserId);
-    if (index >= 0) {
-      const [loser] = rest.splice(index, 1);
-      rest.push(loser);
+  let ranked;
+  if (Array.isArray(result.ranking) && result.ranking.length > 0) {
+    // Modo CORRA!: sobreviventes > monstro > mortos (ordem inversa de morte)
+    const byId = new Map(players.map(player => [player.id, player]));
+    ranked = result.ranking.map(id => byId.get(id)).filter(Boolean);
+    players.forEach(player => {
+      if (!ranked.includes(player)) ranked.push(player);
+    });
+  } else if (Array.isArray(result.deathOrder) && result.deathOrder.length > 0) {
+    // Modo Pegue o Ovo: pontos pela ordem de morte (1º a morrer = 1pt, último vivo = n pts)
+    const byId = new Map(players.map(player => [player.id, player]));
+    ranked = [winner];
+    result.deathOrder.slice().reverse().forEach(id => {
+      const player = byId.get(id);
+      if (player && !ranked.includes(player)) ranked.push(player);
+    });
+    players.forEach(player => {
+      if (!ranked.includes(player)) ranked.push(player);
+    });
+  } else {
+    const rest = players
+      .filter(player => player.id !== result.winnerId)
+      .sort((a, b) => ((b.score || 0) - (a.score || 0)) || (a.joinedAt - b.joinedAt));
+    if (result.loserId) {
+      const index = rest.findIndex(player => player.id === result.loserId);
+      if (index >= 0) {
+        const [loser] = rest.splice(index, 1);
+        rest.push(loser);
+      }
     }
+    ranked = [winner, ...rest];
   }
-  const ranked = [winner, ...rest];
   const n = ranked.length;
   ranked.forEach((player, position) => {
     player.score = (player.score || 0) + (n - position);

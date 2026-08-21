@@ -1,5 +1,5 @@
 import { state, getMyPlayer } from './state.js';
-import { PLAYER_WIDTH, PLAYER_HEIGHT, DASH_COOLDOWN, BOMB_IMAGE_PATH, MAX_BOMB_TIME, TRAIL_LIFE, SHOW_MAP_NAME } from './constants.js';
+import { PLAYER_WIDTH, PLAYER_HEIGHT, DASH_COOLDOWN, BOMB_IMAGE_PATH, EGG_IMAGE_PATH, MAX_BOMB_TIME, TRAIL_LIFE, SHOW_MAP_NAME, RUN_LIVES } from './constants.js';
 import { getFpsEnabled, getFpsColor } from './storage.js';
 import { drawHat } from './hats.js';
 import { drawCosmetics } from './cosmetics.js';
@@ -19,6 +19,14 @@ export function loadBombImage() {
     state.bombImageLoaded = true;
   };
   state.bombImage.src = BOMB_IMAGE_PATH;
+}
+
+export function loadEggImage() {
+  state.eggImage = new Image();
+  state.eggImage.onload = () => {
+    state.eggImageLoaded = true;
+  };
+  state.eggImage.src = EGG_IMAGE_PATH;
 }
 
 function roundRectPath(context, x, y, w, h, r) {
@@ -59,13 +67,21 @@ export function drawScene() {
     drawPlayer(player, time);
     drawNickname(player);
     drawDashIndicator(player, time);
+    if (gs.mode === 'run' && !player.isMonster) {
+      drawHearts(player);
+    }
     if (player.hasBomb) {
       const bob = Math.sin(time * 4) * 3;
       drawBomb(player.x, player.y - PLAYER_HEIGHT - 28 + bob, 36, 42);
     }
+    if (player.hasEgg) {
+      const bob = Math.sin(time * 4) * 3;
+      drawEgg(player.x, player.y - PLAYER_HEIGHT - 26 + bob, 30, 38);
+    }
   });
 
   drawLeaderCrown(gs, time);
+  if (gs.mode === 'egg') drawEggScores(gs);
   drawBombTimer(gs, time);
   drawMapName(gs);
   drawStats();
@@ -77,6 +93,9 @@ function drawPlayer(player, time) {
   const x = player.x - w / 2;
   const y = player.y - h;
 
+  const isMonster = !!player.isMonster;
+  const bodyColor = isMonster ? '#6a2fb8' : player.color;
+
   const moving = Math.abs(player.vx) > 25 && player.onGround;
   const phase = player.x * 0.18;
   const footSwing = moving ? Math.sin(phase) * 5 : 0;
@@ -86,6 +105,16 @@ function drawPlayer(player, time) {
   ctx.beginPath();
   ctx.ellipse(player.x, player.y + 3, w * 0.55, 6, 0, 0, Math.PI * 2);
   ctx.fill();
+
+  if (isMonster) {
+    const pulse = 0.35 + Math.sin(time * 6) * 0.15;
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = 'rgba(106, 47, 184, 0.45)';
+    ctx.beginPath();
+    ctx.arc(player.x, player.y - h / 2, w * 0.85, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
 
   ctx.save();
   let scaleX = 1;
@@ -97,6 +126,9 @@ function drawPlayer(player, time) {
     const bounce = Math.abs(Math.sin(phase));
     scaleX = 1 + bounce * 0.06;
     scaleY = 1 - bounce * 0.08;
+  }
+  if (player.hurtCooldown > 0 && !isMonster) {
+    ctx.globalAlpha = Math.floor(time * 12) % 2 === 0 ? 0.55 : 1;
   }
   ctx.translate(player.x, player.y);
   ctx.scale(scaleX, scaleY);
@@ -111,7 +143,7 @@ function drawPlayer(player, time) {
   roundRectPath(ctx, x + w - 15 - footSwing * 0.6, footY, 11, footH, 4);
   ctx.fill();
 
-  ctx.fillStyle = player.color;
+  ctx.fillStyle = bodyColor;
   roundRectPath(ctx, x, y, w, h, 12);
   ctx.fill();
   ctx.strokeStyle = '#222';
@@ -121,6 +153,26 @@ function drawPlayer(player, time) {
   ctx.fillStyle = 'rgba(255,255,255,0.3)';
   roundRectPath(ctx, x + 8, y + 7, w - 16, h - 20, 8);
   ctx.fill();
+
+  if (isMonster) {
+    ctx.fillStyle = '#3d1a73';
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x + 8, y + 3);
+    ctx.lineTo(x + 5, y - 10);
+    ctx.lineTo(x + 14, y + 1);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x + w - 8, y + 3);
+    ctx.lineTo(x + w - 5, y - 10);
+    ctx.lineTo(x + w - 14, y + 1);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
 
   const eyeY = y + 18;
   const eyeX1 = x + 12 + faceDir * 1.5;
@@ -141,7 +193,7 @@ function drawPlayer(player, time) {
   ctx.ellipse(eyeX2, eyeY, 6, 7, 0, 0, Math.PI * 2);
   ctx.stroke();
 
-  ctx.fillStyle = '#222';
+  ctx.fillStyle = isMonster ? '#e03131' : '#222';
   ctx.beginPath();
   ctx.arc(eyeX1 + faceDir * 2, eyeY + 1, 2.7, 0, Math.PI * 2);
   ctx.fill();
@@ -149,13 +201,30 @@ function drawPlayer(player, time) {
   ctx.arc(eyeX2 + faceDir * 2, eyeY + 1, 2.7, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.strokeStyle = '#222';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(player.x, y + 27, 4, 0.15 * Math.PI, 0.85 * Math.PI);
-  ctx.stroke();
+  if (isMonster) {
+    ctx.fillStyle = '#fff';
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(player.x - 9, y + 27);
+    ctx.lineTo(player.x - 9, y + 32);
+    ctx.lineTo(player.x - 4.5, y + 28);
+    ctx.lineTo(player.x, y + 32);
+    ctx.lineTo(player.x + 4.5, y + 28);
+    ctx.lineTo(player.x + 9, y + 32);
+    ctx.lineTo(player.x + 9, y + 27);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  } else {
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(player.x, y + 27, 4, 0.15 * Math.PI, 0.85 * Math.PI);
+    ctx.stroke();
+  }
 
-  drawHat(ctx, { x: player.x, y: player.y, w, h, vx: player.vx, color: player.color }, player.hat);
+  drawHat(ctx, { x: player.x, y: player.y, w, h, vx: player.vx, color: bodyColor }, player.hat);
   drawCosmetics(ctx, player, time);
 
   ctx.restore();
@@ -184,8 +253,12 @@ function drawNickname(player) {
 
 function drawBombTimer(gs, time) {
   if (gs.bombTime === undefined) return;
-  if (!gs.players.some(player => player.alive && player.hasBomb)) return;
-  const frac = gs.bombTime / MAX_BOMB_TIME;
+  const isEgg = gs.mode === 'egg';
+  const isRun = gs.mode === 'run';
+  if (!isRun && !isEgg && !gs.players.some(player => player.alive && player.hasBomb)) return;
+  if (isEgg && !gs.players.some(player => player.alive && player.hasEgg)) return;
+  const timerMax = gs.timerMax || MAX_BOMB_TIME;
+  const frac = gs.bombTime / timerMax;
   let color = '#2ecc40';
   if (frac <= 0.33) color = '#e74c3c';
   else if (frac <= 0.66) color = '#f1c40f';
@@ -213,6 +286,76 @@ function drawBombTimer(gs, time) {
   ctx.fillStyle = color;
   ctx.fillText(text, 540, 32);
   ctx.restore();
+}
+
+function drawEgg(x, y, w, h) {
+  if (state.eggImageLoaded && state.eggImage) {
+    const img = state.eggImage;
+    const aspect = (img.naturalWidth || 1) / (img.naturalHeight || 1);
+    let dw = w;
+    let dh = h;
+    if (aspect > 1) {
+      dh = w / aspect;
+    } else {
+      dw = h * aspect;
+    }
+    ctx.drawImage(img, x - dw / 2, y - dh / 2, dw, dh);
+  } else {
+    ctx.fillStyle = '#fffaf0';
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.ellipse(x, y, w * 0.42, h * 0.52, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+}
+
+function drawEggScores(gs) {
+  const corners = [
+    { x: 12, y: 12, align: 'left' },
+    { x: 1068, y: 12, align: 'right' },
+    { x: 12, y: 528, align: 'left', bottom: true },
+    { x: 1068, y: 528, align: 'right', bottom: true }
+  ];
+  gs.players.forEach((player, index) => {
+    const corner = corners[index % corners.length];
+    const score = player.eggScore || 0;
+    const text = String(score);
+    ctx.font = '16px "Press Start 2P", "Trebuchet MS", monospace';
+    const scoreW = ctx.measureText(text).width;
+    ctx.font = 'bold 11px "Trebuchet MS", Arial, sans-serif';
+    const nameW = ctx.measureText(player.nickname).width;
+    const boxW = Math.max(scoreW, nameW) + 22;
+    const boxH = 46;
+    const boxX = corner.align === 'left' ? corner.x : corner.x - boxW;
+    const boxY = corner.bottom ? corner.y - boxH : corner.y;
+
+    ctx.globalAlpha = player.alive ? 1 : 0.35;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    roundRectPath(ctx, boxX, boxY, boxW, boxH, 10);
+    ctx.fill();
+    ctx.strokeStyle = player.color;
+    ctx.lineWidth = 3;
+    roundRectPath(ctx, boxX, boxY, boxW, boxH, 10);
+    ctx.stroke();
+
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#fff';
+    ctx.font = 'bold 11px "Trebuchet MS", Arial, sans-serif';
+    const nameY = boxY + 16;
+    ctx.strokeText(player.nickname, boxX + boxW / 2, nameY);
+    ctx.fillStyle = player.color;
+    ctx.fillText(player.nickname, boxX + boxW / 2, nameY);
+
+    ctx.font = '14px "Press Start 2P", "Trebuchet MS", monospace';
+    const scoreY = boxY + boxH - 7;
+    ctx.strokeText(text, boxX + boxW / 2, scoreY);
+    ctx.fillText(text, boxX + boxW / 2, scoreY);
+    ctx.globalAlpha = 1;
+  });
 }
 
 function drawDashIndicator(player, time) {
@@ -246,6 +389,33 @@ function drawDashIndicator(player, time) {
   ctx.stroke();
 }
 
+function drawHearts(player) {
+  const total = RUN_LIVES;
+  const cx = player.x;
+  const cy = player.y + 26;
+  const r = 4.5;
+  const gap = 12;
+  for (let i = 0; i < total; i++) {
+    const hx = cx + (i - (total - 1) / 2) * gap;
+    const filled = i < player.lives;
+    ctx.beginPath();
+    ctx.arc(hx, cy, r, 0, Math.PI * 2);
+    if (filled) {
+      ctx.fillStyle = '#e03131';
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = 'rgba(34,34,34,0.45)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+  }
+}
+
 function drawLeaderCrown(gs, time) {
   const room = state.currentRoom;
   if (!room) return;
@@ -258,7 +428,7 @@ function drawLeaderCrown(gs, time) {
   gs.players.forEach(player => {
     if (!player.alive || player.id !== leaderId) return;
     const bob = Math.sin(time * 3) * 2;
-    const cy = player.y - PLAYER_HEIGHT - 34 - (player.hasBomb ? 26 : 0);
+    const cy = player.y - PLAYER_HEIGHT - 34 - (player.hasBomb || player.hasEgg ? 26 : 0);
     ctx.save();
     ctx.translate(player.x, cy + bob);
     ctx.shadowColor = '#ffd23f';
@@ -396,7 +566,7 @@ function drawStats() {
   const padX = 14;
   const boxW = statsBoxW + padX * 2;
   const boxH = 42;
-  const boxY = 16;
+  const boxY = gs && gs.mode === 'egg' ? 66 : 16;
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   roundRectPath(ctx, 10, boxY, boxW, boxH, 8);
   ctx.fill();

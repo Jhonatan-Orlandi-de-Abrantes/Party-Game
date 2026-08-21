@@ -67,6 +67,8 @@ body {
   transition: background-color .6s ease;
 }
 #screen-lobby.mode-bomb { --mode-color: #ff6b6b; }
+#screen-lobby.mode-egg { --mode-color: #ffd23f; }
+#screen-lobby.mode-run { --mode-color: #b5179e; }
 #screen-lobby .lobby-topbar {
   border-bottom: 4px solid var(--mode-color);
   padding-bottom: 10px;
@@ -949,6 +951,10 @@ input[type="range"]::-moz-range-thumb {
   color: #6b7280;
   font-weight: 600;
   line-height: 1.4;
+}
+.host-config-host-name {
+  margin-left: 4px;
+  white-space: nowrap;
 }
 
 /* ---- Caixa de doação ---- */

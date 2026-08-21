@@ -1,4 +1,4 @@
-import { GAME_MODE_NAME, GAME_MODES, DEFAULT_ROOM_SETTINGS, PLAYER_WIDTH, PLAYER_HEIGHT } from './constants.js';
+import { GAME_MODE_NAME, GAME_MODES, DEFAULT_ROOM_SETTINGS, PLAYER_WIDTH, PLAYER_HEIGHT, SPAWN_COLORS } from './constants.js';
 import { getPlayableMaps } from './maps.js';
 import { state, getMyPlayer, isHost, saveLocalPlayers } from './state.js';
 import * as rooms from './rooms.js';
@@ -72,6 +72,7 @@ export const refs = {
   leaveRoomBtn: $('leaveRoomBtn'),
   lobbyNotice: $('lobbyNotice'),
   lobbyAlerts: $('lobbyAlerts'),
+  lobbyHowToText: $('lobbyHowToText'),
   gamepadStatus: $('gamepadStatus'),
   controlsInfo: $('controlsInfo'),
   messageBox: $('messageBox'),
@@ -179,6 +180,7 @@ export const refs = {
   hostConfigBtn: $('hostConfigBtn'),
   hostConfigPanel: $('hostConfigPanel'),
   hostConfigCloseBtn: $('hostConfigCloseBtn'),
+  hostConfigHostName: $('hostConfigHostName'),
   resetPowerupFreqBtn: $('resetPowerupFreqBtn'),
   resetPlayerSpeedBtn: $('resetPlayerSpeedBtn'),
   resetScoreLimitBtn: $('resetScoreLimitBtn')
@@ -999,6 +1001,14 @@ export function activateUiFocus(pid) {
   }
   const el = list[index];
   if (!el) return;
+  if (el === refs.hostConfigBtn && pid) {
+    const room = state.currentRoom;
+    const acting = room ? room.players.find(player => player.id === pid) : null;
+    if (!acting || !acting.host) {
+      showLobbyAlert('Somente o host pode alterar as regras do jogo!', 'leave');
+      return;
+    }
+  }
   if (el === refs.settingsGearBtn) {
     const id = pid || state.uiPadPlayerId;
     const wasOpen = refs.settingsPanel.classList.contains('open');
@@ -1325,9 +1335,23 @@ export function openInviteModal() {
   refs.inviteModal.classList.remove('hidden');
 }
 
+function updateHostConfigHint() {
+  if (!refs.hostConfigHostName) return;
+  refs.hostConfigHostName.textContent = '';
+  const room = state.currentRoom;
+  const host = room && room.players.find(player => player.host);
+  if (!host) return;
+  const name = document.createElement('strong');
+  name.className = 'host-config-host-name';
+  name.style.color = host.color;
+  name.textContent = host.nickname;
+  refs.hostConfigHostName.appendChild(name);
+}
+
 export function openHostConfig() {
   if (!isHost()) return;
   if (!refs.hostConfigPanel) return;
+  updateHostConfigHint();
   clearUiFocuses();
   refs.hostConfigPanel.classList.remove('hidden');
   setUiFocusIndex(0, state.uiPadPlayerId);
@@ -1383,6 +1407,17 @@ function applyModeTheme(modeId) {
   GAME_MODES.forEach(mode => el.classList.toggle('mode-' + mode.id, mode.id === modeId));
 }
 
+const HOW_TO_TEXT = {
+  bomb: 'Encoste em outro jogador para passar a bomba. Após 15 segundos ela explode em quem a segura. Use o dash para escapar. Cada jogador pode escolher seu controle (ou teclado) na lista de jogadores acima.',
+  egg: 'Um jogador começa com o ovo: cada 0,2s com ele vale 1 ponto — encoste em quem o segura para roubar! A cada 10 segundos, quem tiver MENOS pontos explode. O último vivo ganha mais pontos no placar.',
+  run: 'Um jogador é o MONSTRO! Corra e sobreviva aos 12 segundos — cada encostão do monstro custa um coração (você tem 2). Quem sobreviver ganha mais pontos; o monstro ganha mais quanto mais jogadores eliminar.'
+};
+
+function updateHowToText(modeId) {
+  if (!refs.lobbyHowToText) return;
+  refs.lobbyHowToText.textContent = HOW_TO_TEXT[modeId] || HOW_TO_TEXT.bomb;
+}
+
 function renderLobbyModes() {
   const room = state.currentRoom;
   if (!room || !refs.lobbyModeList) return;
@@ -1397,8 +1432,9 @@ function renderLobbyModes() {
     chip.textContent = mode.name;
     chip.disabled = !host;
     chip.addEventListener('click', () => {
-      if (!isHost() || room.mode === mode.id) return;
-      room.mode = mode.id;
+      const live = state.currentRoom;
+      if (!isHost() || !live || live.mode === mode.id) return;
+      live.mode = mode.id;
       saveRooms();
       renderLobbyModes();
       renderUiFocuses();
@@ -1407,6 +1443,7 @@ function renderLobbyModes() {
     refs.lobbyModeList.appendChild(chip);
   });
   applyModeTheme(current);
+  updateHowToText(current);
 }
 
 function drawMapPreview(canvasEl, map) {
@@ -1425,6 +1462,15 @@ function drawMapPreview(canvasEl, map) {
     ctx2d.strokeStyle = '#222';
     ctx2d.lineWidth = Math.max(1, scale);
     ctx2d.strokeRect(platform.x * scale, platform.y * scale, platform.width * scale, platform.height * scale);
+  });
+  (map.spawns || []).forEach((spawn, index) => {
+    ctx2d.beginPath();
+    ctx2d.arc(spawn.x * scale, spawn.y * scale - 4, Math.max(3, 5 * scale), 0, Math.PI * 2);
+    ctx2d.fillStyle = SPAWN_COLORS[index % SPAWN_COLORS.length];
+    ctx2d.fill();
+    ctx2d.lineWidth = Math.max(1, scale);
+    ctx2d.strokeStyle = '#222';
+    ctx2d.stroke();
   });
 }
 
@@ -1470,10 +1516,16 @@ function renderLobbyMaps() {
 
   const toggle = key => {
     if (!isHost()) return;
-    const current = new Set(hasSelection ? selectedKeys : all.map((m, i) => (m.custom ? m.customId : 'native:' + i)));
+    const live = state.currentRoom;
+    if (!live) return;
+    const pool = getPlayableMaps();
+    const liveSelection = Array.isArray(live.mapSelection) ? live.mapSelection : null;
+    const current = new Set(liveSelection && liveSelection.length > 0
+      ? liveSelection
+      : pool.map((m, i) => (m.custom ? m.customId : 'native:' + i)));
     if (current.has(key)) current.delete(key);
     else current.add(key);
-    room.mapSelection = current.size >= all.length ? [] : [...current];
+    live.mapSelection = current.size >= pool.length ? [] : [...current];
     saveRooms();
     renderLobbyMaps();
     renderUiFocuses();

@@ -1,4 +1,5 @@
-import { GAME_MODE_NAME, PLAYER_WIDTH, PLAYER_HEIGHT } from './constants.js';
+import { GAME_MODE_NAME, GAME_MODES, DEFAULT_ROOM_SETTINGS, PLAYER_WIDTH, PLAYER_HEIGHT } from './constants.js';
+import { getPlayableMaps } from './maps.js';
 import { state, getMyPlayer, isHost, saveLocalPlayers } from './state.js';
 import * as rooms from './rooms.js';
 import {
@@ -63,6 +64,7 @@ export const refs = {
   screenWelcome: $('screen-welcome'),
   screenLobby: $('screen-lobby'),
   screenGame: $('screen-game'),
+  screenMapEditor: $('screen-mapeditor'),
   roomCodeDisplay: $('roomCodeDisplay'),
   maxPlayersDisplay: $('maxPlayersDisplay'),
   playerList: $('playerList'),
@@ -161,7 +163,25 @@ export const refs = {
   cosmeticsCodeSaveBtn: $('cosmeticsCodeSaveBtn'),
   cosmeticsCodeCancelBtn: $('cosmeticsCodeCancelBtn'),
   cosmeticsCodeImportBtn: $('cosmeticsCodeImportBtn'),
-  cosmeticsJsFileInput: $('cosmeticsJsFileInput')
+  cosmeticsJsFileInput: $('cosmeticsJsFileInput'),
+  lobbyModeList: $('lobbyModeList'),
+  lobbyNativeMaps: $('lobbyNativeMaps'),
+  lobbyCustomMaps: $('lobbyCustomMaps'),
+  powerupFreqInput: $('powerupFreqInput'),
+  powerupFreqValue: $('powerupFreqValue'),
+  playerSpeedInput: $('playerSpeedInput'),
+  playerSpeedValue: $('playerSpeedValue'),
+  scoreLimitInput: $('scoreLimitInput'),
+  scoreLimitValue: $('scoreLimitValue'),
+  resetPowerupFreqBtn: $('resetPowerupFreqBtn'),
+  resetPlayerSpeedBtn: $('resetPlayerSpeedBtn'),
+  resetScoreLimitBtn: $('resetScoreLimitBtn'),
+  hostConfigBtn: $('hostConfigBtn'),
+  hostConfigPanel: $('hostConfigPanel'),
+  hostConfigCloseBtn: $('hostConfigCloseBtn'),
+  resetPowerupFreqBtn: $('resetPowerupFreqBtn'),
+  resetPlayerSpeedBtn: $('resetPlayerSpeedBtn'),
+  resetScoreLimitBtn: $('resetScoreLimitBtn')
 };
 
 let confirmCallback = null;
@@ -290,6 +310,33 @@ export function initUi() {
     renderLobby();
   });
 
+  bindRoomRule(refs.powerupFreqInput, refs.powerupFreqValue, '%', refs.resetPowerupFreqBtn, 'powerupFrequency');
+  bindRoomRule(refs.playerSpeedInput, refs.playerSpeedValue, '%', refs.resetPlayerSpeedBtn, 'playerSpeed');
+  bindRoomRule(refs.scoreLimitInput, refs.scoreLimitValue, ' pts', refs.resetScoreLimitBtn, 'scoreLimit');
+
+  if (refs.hostConfigBtn) {
+    refs.hostConfigBtn.addEventListener('click', () => {
+      playClick();
+      openHostConfig();
+    });
+  }
+  if (refs.hostConfigCloseBtn) {
+    refs.hostConfigCloseBtn.addEventListener('click', () => {
+      closeHostConfig();
+      playClick();
+    });
+  }
+  if (refs.hostConfigPanel) {
+    refs.hostConfigPanel.addEventListener('click', event => {
+      if (event.target === refs.hostConfigPanel) closeHostConfig();
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && !refs.hostConfigPanel.classList.contains('hidden')) {
+        closeHostConfig();
+      }
+    });
+  }
+
   if (refs.touchEnabledCheckbox) {
     refs.touchEnabledCheckbox.addEventListener('change', () => {
       saveTouchEnabled(refs.touchEnabledCheckbox.checked);
@@ -311,9 +358,11 @@ export function initUi() {
     btn.addEventListener('click', () => {
       const player = getSettingsPlayer();
       if (!player) return;
+      const label = btn.querySelector('span');
+      if (!label || !btn.dataset.action) return;
       rebindingAction = btn.dataset.action;
       btn.classList.add('recording');
-      btn.querySelector('span').textContent = '...';
+      label.textContent = '...';
       playClick();
     });
   });
@@ -649,16 +698,14 @@ export function getFocusables() {
   });
   if (scope === document.getElementById('screen-lobby') && !modal && !popup && !refs.settingsPanel.classList.contains('open')) {
     const gear = refs.settingsGearBtn;
-    const gearIdx = list.indexOf(gear);
-    if (gearIdx >= 0) list.splice(gearIdx, 1);
     const startBtn = refs.startGameBtn;
     const inviteBtn = refs.inviteBtn;
     const leaveBtn = refs.leaveRoomBtn;
     const btns = [startBtn, inviteBtn, leaveBtn].filter(b => list.indexOf(b) >= 0);
-    btns.forEach(b => { const i = list.indexOf(b); if (i >= 0) list.splice(i, 1); });
+    const chips = list.filter(el => el.classList.contains('lobby-mode-chip'));
+    const hostCfg = refs.hostConfigBtn && list.indexOf(refs.hostConfigBtn) >= 0 ? refs.hostConfigBtn : null;
     const selects = list.filter(el => el.tagName === 'SELECT');
-    selects.forEach(s => { const i = list.indexOf(s); if (i >= 0) list.splice(i, 1); });
-    list = [...btns, ...selects, gear];
+    list = [...(gear ? [gear] : []), ...(hostCfg ? [hostCfg] : []), ...chips, ...selects, ...btns];
   }
   return list;
 }
@@ -1038,6 +1085,8 @@ export function uiBack(pid) {
   if (modal) {
     if (modal === refs.inviteModal) {
       closeInviteModal();
+    } else if (modal === refs.hostConfigPanel) {
+      closeHostConfig();
     } else if (modal === refs.padModal) {
       hidePadConnect();
     } else if (modal === refs.cosmeticsPositionModal) {
@@ -1276,6 +1325,20 @@ export function openInviteModal() {
   refs.inviteModal.classList.remove('hidden');
 }
 
+export function openHostConfig() {
+  if (!isHost()) return;
+  if (!refs.hostConfigPanel) return;
+  clearUiFocuses();
+  refs.hostConfigPanel.classList.remove('hidden');
+  setUiFocusIndex(0, state.uiPadPlayerId);
+}
+
+export function closeHostConfig() {
+  if (!refs.hostConfigPanel || refs.hostConfigPanel.classList.contains('hidden')) return;
+  refs.hostConfigPanel.classList.add('hidden');
+  clearUiFocuses();
+}
+
 export function closeInviteModal() {
   refs.inviteModal.classList.add('hidden');
 }
@@ -1292,15 +1355,167 @@ function syncToAllLocalPlayers(saveFn, value) {
   for (const id of ids) saveFn(id, value);
 }
 
+function roomSettingsOf(room) {
+  return { ...DEFAULT_ROOM_SETTINGS, ...(room && room.settings) };
+}
+
+function bindRoomRule(input, valueEl, suffix, resetBtn, key) {
+  if (!input || !valueEl || !resetBtn) return;
+  input.addEventListener('input', () => {
+    const room = state.currentRoom;
+    if (!room || !isHost()) return;
+    room.settings = { ...roomSettingsOf(room), [key]: Number(input.value) };
+    valueEl.textContent = input.value + suffix;
+    saveRooms();
+  });
+  resetBtn.addEventListener('click', () => {
+    const room = state.currentRoom;
+    if (!room || !isHost()) return;
+    room.settings = { ...roomSettingsOf(room), [key]: DEFAULT_ROOM_SETTINGS[key] };
+    saveRooms();
+    renderLobbyRules();
+  });
+}
+
+function applyModeTheme(modeId) {
+  const el = refs.screenLobby;
+  if (!el) return;
+  GAME_MODES.forEach(mode => el.classList.toggle('mode-' + mode.id, mode.id === modeId));
+}
+
+function renderLobbyModes() {
+  const room = state.currentRoom;
+  if (!room || !refs.lobbyModeList) return;
+  const current = GAME_MODES.some(m => m.id === room.mode) ? room.mode : GAME_MODES[0].id;
+  const host = isHost();
+  refs.lobbyModeList.innerHTML = '';
+  GAME_MODES.forEach(mode => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'lobby-mode-chip' + (mode.id === current ? ' selected' : '');
+    chip.style.setProperty('--chip-color', mode.color);
+    chip.textContent = mode.name;
+    chip.disabled = !host;
+    chip.addEventListener('click', () => {
+      if (!isHost() || room.mode === mode.id) return;
+      room.mode = mode.id;
+      saveRooms();
+      renderLobbyModes();
+      renderUiFocuses();
+      playClick();
+    });
+    refs.lobbyModeList.appendChild(chip);
+  });
+  applyModeTheme(current);
+}
+
+function drawMapPreview(canvasEl, map) {
+  const ctx2d = canvasEl.getContext('2d');
+  const w = canvasEl.width;
+  const h = canvasEl.height;
+  ctx2d.setTransform(1, 0, 0, 1, 0, 0);
+  ctx2d.clearRect(0, 0, w, h);
+  ctx2d.fillStyle = map.bg || '#bfe8ff';
+  ctx2d.fillRect(0, 0, w, h);
+  const scale = w / 1080;
+  (map.platforms || []).forEach((platform, index) => {
+    const colors = map.platformColors || ['#a3d97a', '#7fd3f2', '#f6c768', '#f2a1a1'];
+    ctx2d.fillStyle = platform.color || colors[index % colors.length];
+    ctx2d.fillRect(platform.x * scale, platform.y * scale, platform.width * scale, platform.height * scale);
+    ctx2d.strokeStyle = '#222';
+    ctx2d.lineWidth = Math.max(1, scale);
+    ctx2d.strokeRect(platform.x * scale, platform.y * scale, platform.width * scale, platform.height * scale);
+  });
+}
+
+function buildLobbyMapGrid(container, maps, keyOf, isSelected, onToggle) {
+  container.innerHTML = '';
+  if (maps.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'lobby-map-empty';
+    empty.textContent = 'Nenhum mapa aqui ainda. Crie mapas no Editor de Mapas!';
+    container.appendChild(empty);
+    return;
+  }
+  maps.forEach(map => {
+    const key = keyOf(map);
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'lobby-map-card' + (isSelected(key) ? ' selected' : '');
+    card.disabled = !isHost();
+    const canvasEl = document.createElement('canvas');
+    canvasEl.width = 216;
+    canvasEl.height = 108;
+    drawMapPreview(canvasEl, map);
+    const label = document.createElement('span');
+    label.className = 'lobby-map-name';
+    label.textContent = map.name;
+    card.appendChild(canvasEl);
+    card.appendChild(label);
+    card.addEventListener('click', () => onToggle(key));
+    container.appendChild(card);
+  });
+}
+
+function renderLobbyMaps() {
+  const room = state.currentRoom;
+  if (!room || !refs.lobbyNativeMaps || !refs.lobbyCustomMaps) return;
+  const all = getPlayableMaps();
+  const natives = all.filter(map => !map.custom);
+  const customs = all.filter(map => map.custom);
+  const selection = Array.isArray(room.mapSelection) ? room.mapSelection : null;
+  const hasSelection = selection && selection.length > 0;
+  const selectedKeys = new Set(selection || []);
+  const isSelected = key => !hasSelection || selectedKeys.has(key);
+
+  const toggle = key => {
+    if (!isHost()) return;
+    const current = new Set(hasSelection ? selectedKeys : all.map((m, i) => (m.custom ? m.customId : 'native:' + i)));
+    if (current.has(key)) current.delete(key);
+    else current.add(key);
+    room.mapSelection = current.size >= all.length ? [] : [...current];
+    saveRooms();
+    renderLobbyMaps();
+    renderUiFocuses();
+  };
+
+  buildLobbyMapGrid(refs.lobbyNativeMaps, natives, map => 'native:' + natives.indexOf(map), isSelected, toggle);
+  buildLobbyMapGrid(refs.lobbyCustomMaps, customs, map => map.customId, isSelected, toggle);
+}
+
+function renderLobbyRules() {
+  const room = state.currentRoom;
+  if (!room || !refs.powerupFreqInput) return;
+  const settings = roomSettingsOf(room);
+  const host = isHost();
+  refs.powerupFreqInput.value = settings.powerupFrequency;
+  refs.powerupFreqValue.textContent = `${settings.powerupFrequency}%`;
+  refs.playerSpeedInput.value = settings.playerSpeed;
+  refs.playerSpeedValue.textContent = `${settings.playerSpeed}%`;
+  refs.scoreLimitInput.value = settings.scoreLimit;
+  refs.scoreLimitValue.textContent = `${settings.scoreLimit} pts`;
+  refs.powerupFreqInput.disabled = !host;
+  refs.playerSpeedInput.disabled = !host;
+  refs.scoreLimitInput.disabled = !host;
+  refs.resetPowerupFreqBtn.disabled = !host;
+  refs.resetPlayerSpeedBtn.disabled = !host;
+  refs.resetScoreLimitBtn.disabled = !host;
+}
+
 export function showScreen(name) {
   state.currentScreen = name;
   clearUiFocuses();
   refs.screenWelcome.classList.toggle('hidden', name !== 'welcome');
   refs.screenLobby.classList.toggle('hidden', name !== 'lobby');
   refs.screenGame.classList.toggle('hidden', name !== 'game');
+  if (refs.screenMapEditor) {
+    refs.screenMapEditor.classList.toggle('hidden', name !== 'mapEditor');
+  }
+  window.dispatchEvent(new CustomEvent('bombparty:screenchange', { detail: { screen: name } }));
   if (name !== 'lobby') {
     closeSettingsPanel();
     closeHatPicker();
+    closeHostConfig();
   }
   if (name !== 'game') {
     hideResultsOverlay();
@@ -1444,6 +1659,7 @@ export function renderSettings() {
   if (refs.touchStyleSelect) refs.touchStyleSelect.value = getTouchStyle();
   document.querySelectorAll('.key-btn').forEach(btn => {
     const label = btn.querySelector('span');
+    if (!label) return;
     if (!btn.classList.contains('recording')) label.textContent = getKeyLabel(player.id, btn.dataset.action);
   });
 }
@@ -1459,6 +1675,7 @@ export function renderLobby() {
     refs.playersStatusLine.classList.toggle('partial', !countFull);
   }
   if (refs.inviteBtn) refs.inviteBtn.classList.remove('hidden');
+  if (refs.hostConfigBtn) refs.hostConfigBtn.classList.toggle('hidden', !isHost());
   if (padConnectIndex >= 0 && !refs.padModal.classList.contains('hidden')) populatePadAssignList();
 
   updateGamepadStatus();
@@ -1502,6 +1719,9 @@ export function renderLobby() {
   refs.lobbyNotice.textContent = '';
   refs.startGameBtn.disabled = !isHost() || room.players.length < 2;
 
+  renderLobbyModes();
+  renderLobbyMaps();
+  renderLobbyRules();
   setStartButtonPressed(isCountdownActive());
   renderSettings();
 }

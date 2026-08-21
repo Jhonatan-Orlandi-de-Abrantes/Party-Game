@@ -1,5 +1,5 @@
 import { state, saveLocalPlayers } from './state.js';
-import { ROOM_CODE_LENGTH, STALE_TIMEOUT } from './constants.js';
+import { ROOM_CODE_LENGTH, STALE_TIMEOUT, uuid, DEFAULT_ROOM_SETTINGS } from './constants.js';
 import { loadRooms, saveRooms, removePlayerInput, gameKey, getDeviceId, getHat, getEquippedCosmetics } from './storage.js';
 
 export function randomCode() {
@@ -23,10 +23,10 @@ export function createRoom(nickname, maxPlayers, mode = 'local') {
   if (!nickname) return 'Informe um apelido antes de criar a sala.';
   state.rooms = loadRooms();
   const code = randomCode();
-  const playerId = crypto.randomUUID();
+  const playerId = uuid();
   const deviceId = getDeviceId();
   const player = { id: playerId, nickname, color: randomColor(), host: true, joinedAt: Date.now(), lastSeen: Date.now(), deviceId, hat: getHat(deviceId), cosmetics: getEquippedCosmetics(), score: 0 };
-  const room = { code, players: [player], maxPlayers, started: false, ownerId: playerId, createdAt: Date.now(), mode };
+  const room = { code, players: [player], maxPlayers, started: false, ownerId: playerId, createdAt: Date.now(), mode, settings: { ...DEFAULT_ROOM_SETTINGS }, mapSelection: null };
   state.rooms.push(room);
   saveRooms();
   state.myPlayerId = playerId;
@@ -48,7 +48,7 @@ export function joinRoom(nickname, code) {
   if (room.players.some(player => player.nickname.toLowerCase() === nickname.toLowerCase())) {
     return 'Apelido já utilizado na sala. Use outro.';
   }
-  const playerId = crypto.randomUUID();
+  const playerId = uuid();
   const deviceId = getDeviceId();
   const player = { id: playerId, nickname, color: randomColor(), host: false, joinedAt: Date.now(), lastSeen: Date.now(), deviceId, hat: getHat(deviceId), cosmetics: getEquippedCosmetics(), score: 0 };
   room.players.push(player);
@@ -72,7 +72,7 @@ export function addLocalPlayer(nickname) {
   if (room.players.some(player => player.nickname.toLowerCase() === nickname.toLowerCase())) {
     return { error: 'Apelido já utilizado na sala. Use outro.' };
   }
-  const playerId = crypto.randomUUID();
+  const playerId = uuid();
   const deviceId = getDeviceId();
   const player = { id: playerId, nickname, color: randomColor(), host: false, joinedAt: Date.now(), lastSeen: Date.now(), deviceId, hat: getHat(deviceId), cosmetics: getEquippedCosmetics(), local: true, score: 0 };
   room.players.push(player);
@@ -219,5 +219,5 @@ export function roomSignature(room) {
   const playersSig = room.players.map(player =>
     `${player.id}|${player.nickname}|${player.host}|${player.color}|${player.hat || 'none'}|${player.score || 0}`
   ).join(',');
-  return `${room.code}|${room.started}|${room.maxPlayers}|${room.mode || 'local'}|${playersSig}`;
+  return `${room.code}|${room.started}|${room.maxPlayers}|${room.mode || 'local'}|${playersSig}|${JSON.stringify(room.settings || {})}|${JSON.stringify(room.mapSelection || [])}`;
 }

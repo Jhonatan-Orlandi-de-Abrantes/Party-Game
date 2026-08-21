@@ -3,7 +3,7 @@ import { getPlayerKeys } from './input.js';
 import { publishGameState, saveRooms } from './storage.js';
 import { setStarted } from './rooms.js';
 import { playSound, playPop } from './audio.js';
-import { MAPS } from './maps.js';
+import { getPlayableMaps } from './maps.js';
 import {
   controlSets,
   MAX_BOMB_TIME,
@@ -18,7 +18,8 @@ import {
   JUMP_SPEED,
   DASH_SPEED,
   DASH_ACTIVE_TIME,
-  TRAIL_LIFE
+  TRAIL_LIFE,
+  DEFAULT_ROOM_SETTINGS
 } from './constants.js';
 
 const FLOOR_Y = 540;
@@ -35,6 +36,28 @@ const usedMaps = new Set();
 
 export function setOnRoundEnd(fn) {
   onRoundEnd = fn;
+}
+
+function roomSettings() {
+  return { ...DEFAULT_ROOM_SETTINGS, ...(state.currentRoom && state.currentRoom.settings) };
+}
+
+function selectMapFromPool(pool) {
+  const keyed = pool.map((map, index) => ({ map, key: map.custom ? map.customId : 'native:' + index }));
+  const selection = state.currentRoom && state.currentRoom.mapSelection;
+  let candidates = keyed;
+  if (Array.isArray(selection) && selection.length > 0) {
+    const wanted = new Set(selection);
+    const filtered = keyed.filter(entry => wanted.has(entry.key));
+    if (filtered.length > 0) candidates = filtered;
+  }
+  if (usedMaps.size >= candidates.length) {
+    usedMaps.clear();
+  }
+  const available = candidates.filter(entry => !usedMaps.has(entry.key));
+  const chosen = available[Math.floor(Math.random() * available.length)];
+  usedMaps.add(chosen.key);
+  return chosen.map;
 }
 
 export function initGame() {
@@ -73,22 +96,17 @@ export function initGame() {
   players[firstHolder].hasBomb = true;
   players[firstHolder].lastPasser = players[firstHolder].id;
   lastTrailPoints.clear();
-  let mapIndex;
-  if (usedMaps.size >= MAPS.length) {
-    usedMaps.clear();
-  }
-  const available = [];
-  for (let i = 0; i < MAPS.length; i++) {
-    if (!usedMaps.has(i)) available.push(i);
-  }
-  mapIndex = available[Math.floor(Math.random() * available.length)];
-  usedMaps.add(mapIndex);
-  const chosenMap = MAPS[mapIndex];
+  const chosenMap = selectMapFromPool(getPlayableMaps());
   state.gameState = {
     players,
     trails: [],
-    platforms: chosenMap.platforms,
-    map: { name: chosenMap.name, bg: chosenMap.bg, platformColors: chosenMap.platformColors },
+    platforms: chosenMap.platforms.map(platform => ({ ...platform })),
+    map: {
+      name: chosenMap.name,
+      bg: chosenMap.bg,
+      platformColors: chosenMap.platformColors || ['#a3d97a', '#7fd3f2', '#f6c768', '#f2a1a1'],
+      music: chosenMap.music || null
+    },
     bombOwnerId: players[firstHolder].id,
     bombTime: MAX_BOMB_TIME,
     time: 0,
@@ -122,6 +140,7 @@ export function stepGame(dt) {
 
 function updatePlayers(dt) {
   const gs = state.gameState;
+  const speedScale = (roomSettings().playerSpeed || 100) / 100;
   gs.players.forEach(player => {
     if (!player.alive) return;
     const keys = getPlayerKeys(player);
@@ -148,10 +167,10 @@ function updatePlayers(dt) {
     if (right) move += 1;
 
     if (player.dashActive) {
-      player.vx = player.vx * 0.96 + move * DASH_SPEED * 0.06;
+      player.vx = player.vx * 0.96 + move * DASH_SPEED * speedScale * 0.06;
       spawnDashParticles(player);
     } else {
-      player.vx += move * RUN_SPEED * dt;
+      player.vx += move * RUN_SPEED * speedScale * dt;
       player.vx *= FRICTION;
     }
 
@@ -165,7 +184,7 @@ function updatePlayers(dt) {
       player.dashActive = true;
       player.dashTime = DASH_ACTIVE_TIME;
       player.dashCooldown = DASH_COOLDOWN;
-      player.vx += (move || 1) * DASH_SPEED;
+      player.vx += (move || 1) * DASH_SPEED * speedScale;
       spawnDashParticles(player);
     }
 
@@ -337,7 +356,8 @@ function awardRoundPoints(result) {
       hat: player.hat || (roomPlayer ? roomPlayer.hat : 'none')
     };
   });
-  const champion = ranked.find(player => player.score >= MAX_SCORE);
+  const scoreLimit = roomSettings().scoreLimit || MAX_SCORE;
+  const champion = ranked.find(player => player.score >= scoreLimit);
   if (champion) {
     result.maxScoreReached = true;
     result.champion = {

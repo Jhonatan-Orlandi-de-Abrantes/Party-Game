@@ -18,7 +18,10 @@ import {
   TOUCH_LAYOUT_PREFIX,
   PIX_PRESETS_KEY,
   COSMETICS_KEY,
-  COSMETICS_SYNC_KEY
+  COSMETICS_SYNC_KEY,
+  CUSTOM_MAPS_KEY,
+  CUSTOM_MUSICS_KEY,
+  uuid
 } from './constants.js';
 
 export function loadRooms() {
@@ -30,7 +33,11 @@ export function loadRooms() {
 }
 
 export function saveRooms() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.rooms));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.rooms));
+  } catch (error) {
+    console.warn('Não foi possível salvar as salas (armazenamento cheio?):', error);
+  }
 }
 
 export function syncRooms() {
@@ -156,7 +163,7 @@ export function resetCustomKeys(playerId) {
 export function getDeviceId() {
   let id = localStorage.getItem(DEVICE_ID_KEY);
   if (!id) {
-    id = crypto.randomUUID();
+    id = uuid();
     localStorage.setItem(DEVICE_ID_KEY, id);
   }
   return id;
@@ -291,4 +298,47 @@ export function onCosmeticsSync(callback) {
   window.addEventListener('storage', (e) => {
     if (e.key === COSMETICS_SYNC_KEY) callback();
   });
+}
+
+export function loadCustomMaps() {
+  try {
+    return JSON.parse(localStorage.getItem(CUSTOM_MAPS_KEY) || '[]');
+  } catch (error) {
+    return [];
+  }
+}
+
+export function saveCustomMaps(maps) {
+  localStorage.setItem(CUSTOM_MAPS_KEY, JSON.stringify(maps));
+}
+
+export function loadCustomMusics() {
+  try {
+    return JSON.parse(localStorage.getItem(CUSTOM_MUSICS_KEY) || '{}');
+  } catch (error) {
+    return {};
+  }
+}
+
+function writeCustomMusics(store) {
+  localStorage.setItem(CUSTOM_MUSICS_KEY, JSON.stringify(store));
+}
+
+export function getCustomMusic(id) {
+  return loadCustomMusics()[id] || null;
+}
+
+export function putCustomMusic(id, entry) {
+  const store = loadCustomMusics();
+  store[id] = entry;
+  writeCustomMusics(store);
+}
+
+export function deleteCustomMusic(id) {
+  const store = loadCustomMusics();
+  if (!(id in store)) return;
+  delete store[id];
+  try {
+    writeCustomMusics(store);
+  } catch (error) {}
 }

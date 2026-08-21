@@ -1,4 +1,4 @@
-import { getMusicVolume, getSfxVolume } from './storage.js';
+import { getMusicVolume, getSfxVolume, getCustomMusic } from './storage.js';
 
 const MENU_TRACKS = ['menu1', 'menu2', 'menu3', 'menu4', 'menu5'].map(name => `musics/menu/${name}.mp3`);
 const GAME_TRACKS = ['gm1', 'gm2', 'gm3', 'gm4', 'gm5', 'gm6', 'gm7', 'gm8', 'gm9', 'gm10', 'gm11'].map(name => `musics/game/${name}.mp3`);
@@ -43,6 +43,7 @@ function playFile(src) {
 
 let menuAudio = null;
 let gameAudio = null;
+let gameAudioSrc = null;
 let lastTrack = null;
 
 function randomFrom(list) {
@@ -54,6 +55,23 @@ function randomTrack(list) {
   if (track === lastTrack && list.length > 1) track = randomFrom(list);
   lastTrack = track;
   return track;
+}
+
+export function getNativeGameTracks() {
+  return GAME_TRACKS.slice();
+}
+
+function resolveGameTrack(map) {
+  const music = map && map.music;
+  if (music && music.type === 'native' && music.track) {
+    const src = 'musics/game/' + music.track;
+    if (GAME_TRACKS.includes(src)) return src;
+  }
+  if (music && music.type === 'custom' && music.id) {
+    const entry = getCustomMusic(music.id);
+    if (entry && entry.data) return entry.data;
+  }
+  return randomTrack(GAME_TRACKS);
 }
 
 function stopMusic(audio) {
@@ -78,12 +96,15 @@ export function playMenuMusic() {
   if (menuAudio.paused) startMusic(menuAudio);
 }
 
-export function playGameMusic() {
+export function playGameMusic(map) {
   stopMusic(menuAudio);
   menuAudio = null;
-  if (!gameAudio) {
-    gameAudio = new Audio(randomTrack(GAME_TRACKS));
+  const src = resolveGameTrack(map);
+  if (!gameAudio || gameAudioSrc !== src) {
+    stopMusic(gameAudio);
+    gameAudio = new Audio(src);
     gameAudio.loop = true;
+    gameAudioSrc = src;
   }
   gameAudio.volume = getMusicVolume() / 100;
   if (gameAudio.paused) startMusic(gameAudio);

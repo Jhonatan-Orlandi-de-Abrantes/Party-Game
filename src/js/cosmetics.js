@@ -11,11 +11,12 @@ import {
   MAX_COSMETIC_IMAGE_DIM,
   MAX_COSMETICS_PER_PLAYER,
   PLAYER_WIDTH,
-  PLAYER_HEIGHT
+  PLAYER_HEIGHT,
+  uuid
 } from './constants.js';
 
 export function createCosmeticImage(name, dataUrl) {
-  const id = crypto.randomUUID();
+  const id = uuid();
   const cosmetic = {
     id,
     name: name || 'Imagem',
@@ -32,7 +33,7 @@ export function createCosmeticImage(name, dataUrl) {
 }
 
 export function createCosmeticCode(name, code) {
-  const id = crypto.randomUUID();
+  const id = uuid();
   const cosmetic = {
     id,
     name: name || 'Código',

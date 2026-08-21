@@ -126,9 +126,19 @@ continua contando. O último de pé vence e vê uma tela de vitória com coroa �
 - **Sistema de doação PIX:** botão de doação visível no jogo, abre um modal com
   código PIX copia-e-cola e botão "Copiar código PIX". Suporta presets de valores
   salvos no `localStorage`.
-- **Sistema de mapas:** 6 mapas únicos (Clássico, Torres, Escadas, Ilhas,
-  Arena, Ziguezague), cada um com cores de fundo e plataformas próprias.
-  Selecionados aleatoriamente sem repetição (cicla todos antes de repetir).
+- **Sistema de mapas:** 5 mapas nativos (Clássico, Torres, Escadas, Ilhas,
+  Arena), cada um com cores de fundo e plataformas próprias. Selecionados
+  aleatoriamente sem repetição (cicla todos antes de repetir).
+- **Editor de Mapas (tela inicial):** ferramenta completa para criar mapas
+  visualmente, acessada pelo botão **"Editor de Mapas"** na tela inicial (fora
+  do lobby). Tela grande com preview do mapa (espaço lógico 1080×540), criação
+  de plataformas por arrastar, mover/redimensionar com alças, cor individual
+  por plataforma, cor do fundo e **música do mapa** — padrão (aleatória),
+  nativa (gm1–gm11) ou **personalizada por upload** (máx. 2,5MB, tocada para
+  todos os jogadores da party). Salva no `localStorage`, lista "Meus mapas"
+  para editar/excluir, e **exporta/importa arquivos `.pgmap`** (JSON portátil
+  que inclui o modo de jogo e embute a música personalizada). Mapas salvos
+  entram automaticamente no sorteio de mapas das partidas.
 - **Design responsivo:** breakpoint em 720px para adaptação em telas menores.
 
 ---
@@ -193,7 +203,8 @@ PartyGame/
 │       ├── input.js          → Input de teclado/gamepad; publicação por playerId; atalhos custom
 │       ├── game.js           → Simulação da partida (física, bomba, colisões, partículas)
 │       ├── render.js         → Desenho no canvas (personagens, timer, chapéus, FPS/ping)
-│       ├── maps.js           → Definição dos 6 mapas (nome, cores, plataformas)
+│       ├── maps.js           → Mapas nativos + getPlayableMaps (nativos + customizados por modo)
+│       ├── mapEditor.js      → Editor de mapas da tela inicial (canvas, plataformas, música, import/export)
 │       ├── hats.js           → Catálogo e desenho dos chapéus (canvas) + previews
 │       ├── cosmetics.js      → Cosméticos customizados (imagem/código): CRUD, equipar, desenho e preview
 │       ├── ui.js             → DOM/UI: lobby, aba de configs, seleção de chapéu, gerenciador de cosméticos, modal de confirmação
@@ -241,6 +252,14 @@ PartyGame/
   HOST!" amarelo) e confetes.
 - Configura músicas (menu vs. jogo), efeitos de botão, confete ao iniciar
   partida, e os handlers da UI (cor, auto-pass, FPS/ping, resolução, volume).
+- **Handlers de criar/entrar na sala** (createRoomBtn/joinRoomBtn): todo o
+  fluxo — validação, criação, confete e `showLobby()` — roda dentro de um
+  `try/catch`; qualquer falha aparece no aviso vermelho da tela inicial em vez
+  de morrer silenciosamente no console.
+- **Banner de erros de boot:** script clássico no `<head>` do index.html captura
+  `error`/`unhandledrejection` globais e exibe a mensagem num banner vermelho
+  fixo (`#bootErrorBanner`) — garante que erros de carregamento dos módulos ES
+  fiquem visíveis mesmo sem console aberto.
 - **Confirmações:** sair da sala (lobby e aba de configs) e voltar ao lobby
   durante o jogo (botão ✕ ou botão **Options** do controle) passam por um modal
   de confirmação. Em jogo, apertar **Options** abre o modal e apertar de novo o
@@ -280,6 +299,21 @@ PartyGame/
   (`bombPartyCosmeticsV1`), `COSMETICS_SYNC_KEY` (`bombPartyCosmeticsSync`),
   `MAX_COSMETIC_SIZE` (200000 bytes), `MAX_COSMETIC_IMAGE_DIM` (128px) e
   `MAX_COSMETICS_PER_PLAYER` (5).
+- **Constantes do editor de mapas:** `CUSTOM_MAPS_KEY`
+  (`bombPartyCustomMapsV1`), `CUSTOM_MUSICS_KEY` (`bombPartyCustomMusicsV1`),
+  `MAX_MAP_MUSIC_SIZE` (2,5MB), `MAX_MAP_PLATFORMS` (60),
+  `MAP_EDITOR_WIDTH/HEIGHT` (1080×540) e `GAME_MODES` (lista de modos
+  suportados — hoje só `bomb` = "Bomb Clássico", já com a propriedade `color`
+  usada pelo tema do lobby; usada pelo seletor de modo do editor, para validar
+  arquivos importados e para renderizar os chips de modo do lobby).
+- **`uuid()`:** gera id único com fallback — `crypto.randomUUID()` só existe em
+  contexto seguro (HTTPS/localhost); em outros casos (ex.: acesso por IP da
+  rede) usa `crypto.getRandomValues` ou timestamp+random. **Use sempre esta
+  função** em vez de `crypto.randomUUID()` direto (salas, cosméticos, mapas,
+  device id).
+- **`DEFAULT_ROOM_SETTINGS`:** regras padrão da sala —
+  `{ powerupFrequency: 50, playerSpeed: 100, scoreLimit: MAX_SCORE }`
+  (powerups ainda não existem; o campo já fica pronto).
 - Caminho da imagem da bomba, cores de explosão, nome do modo.
 
 ### `src/js/state.js`
@@ -324,6 +358,11 @@ PartyGame/
     `getEquippedCosmetics`/`saveEquippedCosmetics` (lista por dispositivo em
     `bombPartyEquipped_<deviceId>`) e `onCosmeticsSync(callback)` (escuta o
     evento `storage` da chave de sync).
+  - **Mapas e músicas customizados:** `loadCustomMaps`/`saveCustomMaps`
+    (`bombPartyCustomMapsV1`) e `loadCustomMusics`/`getCustomMusic`/
+    `putCustomMusic`/`deleteCustomMusic` (`bombPartyCustomMusicsV1`, guarda
+    `{ name, data: dataURL }` por id — como é compartilhado entre as abas do
+    navegador, a música personalizada do mapa toca para toda a party).
 
 ### `src/js/rooms.js`
 - Criação/entrada em salas, geração de código (`randomCode`) e cor (`randomColor`).
@@ -331,8 +370,12 @@ PartyGame/
   partida é **mista** (abas separadas e/ou mesma tela). Cada jogador recebe
   `deviceId` (do navegador), `hat` salvo, `cosmetics`
   (`getEquippedCosmetics()` — lista leve de referências dos cosméticos
-  equipados) e `score: 0`. Ao criar/entrar, `localPlayerIds` é resetado para
-  `[meu playerId]`.
+  equipados) e `score: 0`. A sala nasce com **`settings`**
+  (`{...DEFAULT_ROOM_SETTINGS}` — frequência de power-ups, velocidade dos
+  jogadores e limite de pontuação) e **`mapSelection`** (`null` = todos os
+  mapas entram na rotação; senão array de chaves `native:<índice>` /
+  `<id do mapa customizado>`). Ao criar/entrar, `localPlayerIds` é resetado
+  para `[meu playerId]`.
 - `addLocalPlayer(nickname)`: cria um **jogador local** na sala atual (marca
   `local: true`), valida (sala cheia / apelido repetido / partida iniciada) e
   adiciona o id a `localPlayerIds`. Retorna `{ player }` ou `{ error }`.
@@ -347,7 +390,9 @@ PartyGame/
   `{ dropped, removedPlayers }` para a UI exibir alertas de saída detectados
   localmente (sem depender de evento `storage`).
 - `roomSignature`: assinatura da sala (inclui `mode`, `score` e `hat` de cada
-  player) usada para detectar mudanças entre abas.
+  player **+ JSON de `settings` e `mapSelection`**) usada para detectar
+  mudanças entre abas — assim, quando o host ajusta as regras/mapas do lobby,
+  as outras abas re-renderizam o lobby pelo evento `storage`.
 
 ### `src/js/input.js`
 - `getEffectiveControls(playerId)`: retorna os atalhos **efetivos** de um player
@@ -371,8 +416,16 @@ PartyGame/
 
 ### `src/js/game.js` (simulação — só roda no HOST)
 - `initGame()`: cria jogadores, plataformas, escolhe quem inicia com a bomba.
-  Cada player da simulação copia `hat` e `cosmetics` do player da sala
-  (`player.cosmetics || []`) para serem desenhados durante a partida.
+  O mapa vem de **`getPlayableMaps()`** (nativos + customizados do editor)
+  **filtrado por `room.mapSelection`** (chaves `native:<índice>` /
+  `<customId>`; vazio/nulo = todos) via `selectMapFromPool()`, que mantém o
+  ciclo sem repetição. Aplica as **regras da sala**: `playerSpeed` (escala
+  `RUN_SPEED`/`DASH_SPEED`) e `scoreLimit` (substitui `MAX_SCORE` na detecção
+  do campeão). Cada player da simulação copia `hat` e `cosmetics` do player da
+  sala (`player.cosmetics || []`) e o estado publica `map` com `name`, `bg`,
+  `platformColors` e **`music`** (para os clientes sincronizarem a música do
+  mapa). As plataformas são copiadas (`{...platform}`) preservando a cor
+  individual dos mapas customizados.
 - `stepGame(dt)`: física (gravidade, fricção, dash), colisões com plataformas,
   passagem da bomba, partículas.
 - **Regras da bomba:** ao ser passada, o timer **não reseta e não ganha +2s** —
@@ -393,9 +446,10 @@ PartyGame/
   `TRAIL_LIFE` (0.35s).
 
 ### `src/js/render.js` (desenho no canvas)
-- `drawScene()`: fundo, plataformas, partículas, personagens (com chapéu),
-  bombas, dash indicator, **timer central**, **coroa do líder** e overlay de
-  FPS/ping.
+- `drawScene()`: fundo, plataformas (cada uma pode ter **cor própria** —
+  `platform.color`, usada pelos mapas do editor; fallback: cicla
+  `platformColors`), partículas, personagens (com chapéu), bombas, dash
+  indicator, **timer central**, **coroa do líder** e overlay de FPS/ping.
 - `drawLeaderCrown()`: coroa dourada **brilhante** (pulso de `shadowBlur`)
   acima do **líder** (único jogador com maior `score` > 0), desenhada após os
   personagens.
@@ -626,6 +680,9 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
 - `showScreen(name)` também **fecha o seletor de chapéus** (além da aba de
    configurações) ao sair da tela de lobby — assim, se o jogo iniciar enquanto
    o jogador estiver na tela de cosméticos, ela é fechada automaticamente.
+   Também controla a tela do **editor de mapas** (`mapEditor`) e dispara o
+   evento `bombparty:screenchange` (usado pelo editor para parar o preview de
+   áudio ao sair).
 - **Gerenciador de cosméticos customizados** (`openCosmeticsModal`, botão
   "Gerenciar Cosméticos Personalizáveis" da aba de configurações): lista todos
   os cosméticos criados com preview (`drawCosmeticPreview`), botões **+ Imagem**
@@ -668,8 +725,28 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
   dois jogadores e só permite um jogador no teclado — mesma tela = mesmo
   teclado), status de gamepads conectados (lembrete de conectar um controle
   para adicionar jogadores), rótulo **"Você"** para os jogadores locais desta
-  tela, badge de pontos (quando > 0), botão **"Convidar"** sempre visível e
-  `renderSettings()`.
+  tela, badge de pontos (quando > 0), botão **"Convidar"** sempre visível,
+  `renderSettings()` e as **seções de configuração da sala**:
+   - `renderLobbyModes()`: chips de **modo de jogo** (um por item de
+     `GAME_MODES`, cada um com a cor do modo via `--chip-color`); só o host
+     troca (`room.mode`), e a classe `mode-<id>` no `#screen-lobby` alimenta a
+     variável CSS `--mode-color` — a tela tem `transition` de ~0,6s, então as
+     cores (bordas, títulos) animam ao trocar de modo. Os chips ficam **direto
+     no lobby**, junto do botão **"Mapas & Regras"** (só aparece para o host).
+   - `renderLobbyMaps()` e `renderLobbyRules()` preenchem o modal
+     **`#hostConfigPanel`** ("Mapas & Regras da partida"), que **não fica na
+     tela do lobby** — abre/fecha pelo botão do host, pelo ✕, pelo fundo, por
+     Escape ou pelo botão B do controle. Mapas: grade com pré-visualização
+     (mini-canvas desenhado por `drawMapPreview`) separada em **nativos** e
+     **meus mapas**; o host clica para incluir/retirar do rodízio
+     (`room.mapSelection`; sem seleção = todos). Regras: sliders de
+     **frequência de power-ups** (preparado para o recurso futuro),
+     **velocidade dos jogadores** e **limite de pontuação**, cada um com botão
+     ↺ de reset individual para o padrão (`DEFAULT_ROOM_SETTINGS`); gravam em
+     `room.settings` (`saveRooms`). Enquanto o painel está aberto,
+     `pollUiGamepad` só aceita navegação do **controle atribuído ao host**
+     (demais controles e abas não-host são ignorados; mouse/teclado sempre
+     funcionam). `showScreen` fecha o painel ao sair do lobby.
 - `renderSettings()`: sincroniza a aba de configurações com o `localStorage` e
   preenche o **título da aba** (h3 ao lado do botão de fechar) com
   "Configurações de {nome}" — nome na cor do jogador, com "…" se muito longo —
@@ -685,9 +762,14 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
   timer agora é desenhado no canvas.
 
 ### `src/js/audio.js`
-- Música do menu (aleatória de `musics/menu`) e do jogo (aleatória de
-  `musics/game`); troca automática entre telas. Volume respeita a config
-  `getMusicVolume` (padrão 70).
+- Música do menu (aleatória de `musics/menu`) e do jogo; troca automática entre
+  telas. Volume respeita a config `getMusicVolume` (padrão 70).
+- **`playGameMusic(map)`:** resolve a faixa da partida a partir do mapa —
+  `music.type === 'native'` toca a faixa nativa indicada (`gm1–gm11`),
+  `'custom'` busca o data URL em `bombPartyCustomMusicsV1` pelo `music.id`
+  (música personalizada do editor de mapas) e, sem configuração/falha, sorteia
+  uma faixa aleatória. Só troca o áudio quando a fonte muda (comparação de
+  `src`). `getNativeGameTracks()` expõe a lista para o editor.
 - Efeitos: `playClick` (botões, via WebAudio), `playPop`, e `playSound(nome)`
   (agora **async**) que toca um mp3 aleatório do grupo. Grupos definidos em
   `SOUND_GROUPS`: `start-countdown` → `sounds/countdown/countdown.mp3`,
@@ -708,15 +790,53 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
   tela toda. Usado ao entrar na sala e ao iniciar a partida.
 
 ### `src/js/maps.js`
-- `MAPS`: array com 6 definições de mapa, cada uma com `name`, `bg` (cor de
-  fundo), `platformColors` (array de cores para as plataformas) e `platforms`
-  (array de retângulos `{x, y, width, height}`). Mapas: Clássico, Torres,
-  Escadas, Ilhas, Arena, Ziguezague.
-- Seleção aleatória sem repetição: o jogo cicla por todos os mapas antes de
-  repetir qualquer um.
+- `MAPS`: array com 5 mapas nativos, cada um com `name`, `bg` (cor de fundo),
+  `platformColors` (array de cores para as plataformas) e `platforms` (array de
+  retângulos `{x, y, width, height}`). Mapas: Clássico, Torres, Escadas, Ilhas,
+  Arena.
+- `getPlayableMaps()`: devolve os nativos + os **mapas customizados** salvos no
+  `localStorage` cujo `mode` está em `GAME_MODES`. Mapas customizados têm
+  `color` por plataforma, `music` (configuração de música do mapa) e
+  `customId` (o id original — usado pela seleção de mapas do lobby).
+- Seleção aleatória sem repetição: o jogo cicla por todos os mapas do pool
+  antes de repetir qualquer um.
 - Mapas Ilhas e Ziguezague foram redesenhados usando imagens de referência
   (pasta `REFERENCIAS-MAPAS/`, **não presente mais no repositório**) — as
   posições das plataformas seguem as linhas verdes das imagens.
+
+### `src/js/mapEditor.js` (editor de mapas da tela inicial)
+- Acessado pelo botão **"Editor de Mapas"** na tela inicial (`openMapEditor`,
+  tela `screen-mapeditor`, fora do lobby). Inicializado por `initMapEditor()`
+  no boot (main.js).
+- **Canvas 1080×540** (mesmo espaço lógico do jogo) com grade sutil; desenha o
+  mapa igual ao `render.js` (fundo + plataformas com contorno `#222`).
+- **Ferramentas:** *Selecionar* (clica para selecionar, arrasta para mover,
+  alças nos 4 cantos para redimensionar), *+ Plataforma* (arraste para desenhar
+  um retângulo; clique curto cria uma plataforma padrão 200×24), *Duplicar* e
+  *Excluir* (botão ou tecla Delete/Backspace). Botões que agem sobre a seleção
+  (*Duplicar*, *Excluir*) exibem o aviso "Nenhuma plataforma selecionada." no
+  `mapEditorNotice` quando acionados sem seleção. Todos os avisos do editor
+  também aparecem num **toast fixo** no topo da tela (`#mapEditorToast`,
+  vermelho, some após ~4,5s — helper `showEditorNotice`). Limite de
+  `MAX_MAP_PLATFORMS` (60) plataformas.
+- **Painel de propriedades:** X, Y, Largura, Altura (inputs numéricos) e cor
+  individual da plataforma (color picker); cor do fundo do mapa; nome do mapa;
+  **seletor de modo de jogo** (`GAME_MODES`) — define para qual modo o arquivo
+  serve.
+- **Música do mapa:** *Padrão do jogo (aleatória)*, *Nativa* (gm1–gm11) ou
+  *Personalizada* — upload de áudio (máx. `MAX_MAP_MUSIC_SIZE` = 2,5MB), salvo
+  como data URL em `bombPartyCustomMusicsV1` (compartilhado entre abas → toca
+  para toda a party). Botões "Ouvir"/"Parar" para preview local.
+- **Persistência:** salva automaticamente (debounce 500ms) em
+  `bombPartyCustomMapsV1`; lista "Meus mapas" com Editar/Excluir (excluir também
+  remove a música customizada se nenhum outro mapa a usa).
+- **Exportar:** baixa `<nome>.pgmap` — JSON `{ format: 'partygame-map',
+  version, mode, name, bg, platforms[], music }`; se a música for personalizada,
+  o data URL é **embutido no arquivo** (portável entre máquinas).
+- **Importar:** valida `format`, modo suportado e plataformas (sanitizadas);
+  música embutida é gravada no store local com novo id.
+- Ao sair do editor, o preview de áudio para (evento
+  `bombparty:screenchange` disparado por `showScreen`).
 
 ### `src/js/touch.js`
 - Controles touch mobile para dispositivos com tela sensível ao toque.
@@ -764,7 +884,12 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
    completos (imagem/código) fora do estado da sala; cada gravação atualiza
    `bombPartyCosmeticsSync` (timestamp) e as outras abas recarregam o cache de
    imagens via evento `storage`.
-8. **Globais** → `bombPartyMusicVolume`, `bombPartySfxVolume`,
+8. **Mapas customizados** → `bombPartyCustomMapsV1` (criados no editor) entram
+   no pool de `getPlayableMaps()`; o mapa sorteado vai para o estado publicado
+   (`gs.map`, incluindo `music`). Músicas personalizadas ficam em
+   `bombPartyCustomMusicsV1` (data URL por id) — cada aba resolve localmente e
+   toca a mesma faixa.
+9. **Globais** → `bombPartyMusicVolume`, `bombPartySfxVolume`,
    `bombPartyPixPresets`.
 
 ## 6. Chaves do `localStorage`
@@ -789,6 +914,8 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
 | `bombPartyCosmeticsV1`       | Store dos cosméticos customizados criados (`{ id: { id, name, type, data/code, createdAt } }`) |
 | `bombPartyCosmeticsSync`     | Timestamp da última gravação dos cosméticos (dispara sync entre abas via evento `storage`) |
 | `bombPartyEquipped_<deviceId>` | JSON com a lista de cosméticos equipados (`[{ id, offsetX, offsetY, scale }]`, máx. 5) |
+| `bombPartyCustomMapsV1`      | Array de mapas criados no editor (`{ id, name, mode, bg, platforms[{x,y,width,height,color}], music, updatedAt }`) |
+| `bombPartyCustomMusicsV1`    | Store de músicas personalizadas dos mapas (`{ id: { name, data: dataURL } }`, máx. 2,5MB cada) |
 | `bombPartyTouchEnabled_<id>` | "1"/"0" — controles touch habilitados              |
 | `bombPartyTouchStyle_<id>`   | Estilo do touch: "arrows" ou "analog"              |
 | `bombPartyTouchLayout_<id>`  | JSON com posições dos botões touch (porcentagens)   |
@@ -832,6 +959,16 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
   `loadAllCosmeticImages`. O código do usuário roda via `new Function` — erros
   são engolidos em jogo; não passar referências internas do jogo para ele
   (só o objeto `player` enxuto).
+- **Mapas customizados:** o pool de partidas vem sempre de
+  `getPlayableMaps()` (nativos + custom com `mode` suportado). Plataformas de
+  mapas do editor têm `color` própria — o `render.js` usa
+  `platform.color || platformColors[...]`. A música do mapa é publicada em
+  `gs.map.music` e cada aba resolve a fonte localmente (`playGameMusic(map)`);
+  músicas personalizadas são data URLs em `bombPartyCustomMusicsV1`
+  (compartilhado entre abas). Arquivos `.pgmap` embutem a música (portátil);
+  ao importar, gravar no store local com novo id. Novos modos de jogo devem ser
+  adicionados a `GAME_MODES` (constants.js) para aparecerem no editor e
+  habilitarem arquivos daquele modo.
 - **Gamepad:** a atribuição é por playerId e armazenada por aba; o input lê o
   gamepad do player atribuído e mescla com o teclado. **Menus:** `getUiPad` só
   devolve um gamepad atribuído a um player **desta aba** (`localPlayerIds`) —
@@ -843,3 +980,21 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
   (dono do pad que abriu).
 - **Confirmações:** qualquer saída (sala/lobby) deve passar por `showConfirm`
   para manter o padrão da UI.
+- **IDs únicos:** nunca chamar `crypto.randomUUID()` direto — usar `uuid()`
+  (constants.js), que tem fallback para contextos não seguros (site aberto por
+  IP da rede, por exemplo). Foi a causa do botão "Criar sala" morrer sem
+  mensagem.
+- **Classe `.key-btn`:** o ui.js assume que todo `.key-btn` é um botão de
+  rebinding de tecla do painel de configurações (listener global de clique +
+  `renderSettings` escrevem em `btn.querySelector('span')`). Botões que apenas
+  reutilizam o estilo (ferramentas do editor de mapas) **não têm `<span>` nem
+  `data-action`** — por isso ambos os pontos agora ignoram botões sem `span`.
+  Foi a causa real do "Criar sala" travar: `renderLobby → renderSettings`
+  crashava nesses botões e a tela nunca trocava.
+- **Regras e mapas da sala:** `room.settings` (powerups/velocidade/limite de
+  pontos) e `room.mapSelection` (chaves `native:<índice>` / `<customId>`)
+  vivem na sala (sincronizam entre abas via `roomSignature`). Sliders do lobby
+  só são editáveis pelo host; power-ups ainda não existem — o slider já fica
+  pronto. Ao adicionar um novo modo em `GAME_MODES`, dê a ele uma propriedade
+  `color` e crie a classe CSS `#screen-lobby.mode-<id>` com o `--mode-color`
+  correspondente para o tema animado funcionar.

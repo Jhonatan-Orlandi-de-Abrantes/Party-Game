@@ -1,3 +1,6 @@
+import { loadCustomMaps } from './storage.js';
+import { GAME_MODES } from './constants.js';
+
 export const MAPS = [
   {
     name: 'Clássico',
@@ -66,3 +69,24 @@ export const MAPS = [
     ]
   }
 ];
+
+const SUPPORTED_MODES = new Set(GAME_MODES.map(mode => mode.id));
+
+function customToPlayable(entry) {
+  return {
+    name: entry.name || 'Mapa customizado',
+    bg: entry.bg || '#bfe8ff',
+    platformColors: entry.platformColors || ['#a3d97a', '#7fd3f2', '#f6c768', '#f2a1a1'],
+    platforms: (entry.platforms || []).map(platform => ({ ...platform })),
+    music: entry.music || null,
+    custom: true,
+    customId: entry.id
+  };
+}
+
+export function getPlayableMaps() {
+  const customs = loadCustomMaps()
+    .filter(entry => SUPPORTED_MODES.has(entry.mode || 'bomb'))
+    .map(customToPlayable);
+  return MAPS.concat(customs);
+}

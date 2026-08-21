@@ -44,7 +44,7 @@ export function drawScene() {
 
   const mapColors = (gs.map && gs.map.platformColors) || ['#a3d97a', '#7fd3f2', '#f6c768', '#f2a1a1'];
   gs.platforms.forEach((platform, index) => {
-    ctx.fillStyle = mapColors[index % mapColors.length];
+    ctx.fillStyle = platform.color || mapColors[index % mapColors.length];
     ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
     ctx.strokeStyle = '#222';
     ctx.lineWidth = 3;

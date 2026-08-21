@@ -24,11 +24,38 @@ export const TOUCH_LAYOUT_PREFIX = 'bombPartyTouchLayout_';
 export const PIX_PRESETS_KEY = 'bombPartyPixPresets';
 export const COSMETICS_KEY = 'bombPartyCosmeticsV1';
 export const COSMETICS_SYNC_KEY = 'bombPartyCosmeticsSync';
+export const CUSTOM_MAPS_KEY = 'bombPartyCustomMapsV1';
+export const CUSTOM_MUSICS_KEY = 'bombPartyCustomMusicsV1';
 export const MAX_COSMETIC_SIZE = 200000;
 export const MAX_COSMETIC_IMAGE_DIM = 128;
 export const MAX_COSMETICS_PER_PLAYER = 5;
+export const MAX_MAP_MUSIC_SIZE = 2500000;
+export const MAX_MAP_PLATFORMS = 60;
+export const MAP_EDITOR_WIDTH = 1080;
+export const MAP_EDITOR_HEIGHT = 540;
 export const PUBLISH_INTERVAL = 33;
 export const HOST_TIMEOUT = 3000;
+
+export function uuid() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = [...bytes].map(b => b.toString(16).padStart(2, '0'));
+    return `${hex.slice(0, 4).join('')}-${hex.slice(4, 6).join('')}-${hex.slice(6, 8).join('')}-${hex.slice(8, 10).join('')}-${hex.slice(10, 16).join('')}`;
+  }
+  return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
+
+export const DEFAULT_ROOM_SETTINGS = {
+  powerupFrequency: 50,
+  playerSpeed: 100,
+  scoreLimit: MAX_SCORE
+};
 
 export const PLAYER_WIDTH = 40;
 export const PLAYER_HEIGHT = 44;
@@ -42,7 +69,10 @@ export const DASH_SPEED = 720;
 export const DASH_ACTIVE_TIME = 0.18;
 
 export const EXPLOSION_COLORS = ['#3a3a3a', '#c1121f', '#f77f00', '#fcbf49'];
-export const GAME_MODE_NAME = 'Bomb Clássico';
+export const GAME_MODE_NAME = '💣 Bomb Clássico';
+export const GAME_MODES = [
+  { id: 'bomb', name: '💣 Bomb Clássico', color: '#ff6b6b' }
+];
 export const BOMB_IMAGE_PATH = 'src/Images/BombGame/bomb.png';
 export const TRAIL_LIFE = 0.35;
 

@@ -9,6 +9,7 @@ import * as audio from './audio.js';
 import { spawnConfetti } from './effects.js';
 import { loadAllCosmeticImages } from './cosmetics.js';
 import { onCosmeticsSync } from './storage.js';
+import { initMapEditor } from './mapEditor.js';
 import {
   refs,
   initUi,
@@ -117,12 +118,14 @@ function becomeSimulator() {
     state.gameState = st;
     state.accTime = 0;
     storage.publishGameState();
+    audio.playGameMusic(st.map);
     startSimLoop();
     return;
   }
   if (state.currentRoom && state.currentRoom.started && isHost() && (!st || !st.running)) {
     game.initGame();
     storage.publishGameState();
+    audio.playGameMusic(state.gameState.map);
     startSimLoop();
     return;
   }
@@ -200,6 +203,7 @@ function clientRenderLoop() {
   if (st && st.rev !== state.lastSeenRev) {
     state.lastSeenRev = st.rev;
     state.gameState = st;
+    audio.playGameMusic(st.map);
     drawScene();
     updateHud();
   }
@@ -262,7 +266,7 @@ function enterGameScreen() {
   refs.messageBox.classList.remove('victory');
   closeSettingsPanel();
   applyResolution();
-  audio.playGameMusic();
+  audio.playGameMusic(state.gameState && state.gameState.map);
   showScreen('game');
   input.publishLocalInputs();
   if (document.visibilityState === 'visible') {
@@ -379,27 +383,37 @@ refs.countdownCancelBtn.addEventListener('click', () => {
 });
 
 refs.createRoomBtn.addEventListener('click', () => {
-  const nickname = refs.nicknameInput.value.trim();
-  const maxPlayers = Number(refs.maxPlayersInput.value);
-  const error = rooms.createRoom(nickname, maxPlayers);
-  if (error) {
-    showNotice(refs.welcomeNotice, error);
-    return;
+  try {
+    const nickname = refs.nicknameInput.value.trim();
+    const maxPlayers = Number(refs.maxPlayersInput.value);
+    const error = rooms.createRoom(nickname, maxPlayers);
+    if (error) {
+      showNotice(refs.welcomeNotice, error);
+      return;
+    }
+    spawnConfetti(30);
+    showLobby();
+  } catch (error) {
+    console.error('Erro ao criar sala:', error);
+    showNotice(refs.welcomeNotice, 'Erro ao criar a sala: ' + error.message);
   }
-  spawnConfetti(30);
-  showLobby();
 });
 
 refs.joinRoomBtn.addEventListener('click', () => {
-  const nickname = refs.nicknameInput.value.trim();
-  const code = refs.roomCodeInput.value.trim().toUpperCase();
-  const error = rooms.joinRoom(nickname, code);
-  if (error) {
-    showNotice(refs.welcomeNotice, error);
-    return;
+  try {
+    const nickname = refs.nicknameInput.value.trim();
+    const code = refs.roomCodeInput.value.trim().toUpperCase();
+    const error = rooms.joinRoom(nickname, code);
+    if (error) {
+      showNotice(refs.welcomeNotice, error);
+      return;
+    }
+    spawnConfetti(30);
+    showLobby();
+  } catch (error) {
+    console.error('Erro ao entrar na sala:', error);
+    showNotice(refs.welcomeNotice, 'Erro ao entrar na sala: ' + error.message);
   }
-  spawnConfetti(30);
-  showLobby();
 });
 
 refs.leaveRoomBtn.addEventListener('click', () => {
@@ -710,7 +724,15 @@ function pollUiGamepad() {
     return;
   }
 
-  for (const { pad, playerId } of uiPads) {
+  let navPads = uiPads;
+  const hostConfigOpen = refs.hostConfigPanel && !refs.hostConfigPanel.classList.contains('hidden');
+  if (hostConfigOpen) {
+    const room = state.currentRoom;
+    const hostPlayer = room ? room.players.find(p => p.host) : null;
+    navPads = hostPlayer ? uiPads.filter(entry => entry.playerId === hostPlayer.id) : [];
+  }
+
+  for (const { pad, playerId } of navPads) {
     const st = padUiState(pad);
     const axis0 = pad.axes[0] || 0;
     const axis1 = pad.axes[1] || 0;
@@ -815,4 +837,5 @@ loadBombImage();
 loadAllCosmeticImages();
 onCosmeticsSync(() => loadAllCosmeticImages());
 initUi();
+initMapEditor();
 initPage();

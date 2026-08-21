@@ -303,7 +303,7 @@ PartyGame/
   (`bombPartyCustomMapsV1`), `CUSTOM_MUSICS_KEY` (`bombPartyCustomMusicsV1`),
   `MAX_MAP_MUSIC_SIZE` (2,5MB), `MAX_MAP_PLATFORMS` (60),
   `MAP_EDITOR_WIDTH/HEIGHT` (1080×540) e `GAME_MODES` (lista de modos
-  suportados — hoje só `bomb` = "Bomb Clássico", já com a propriedade `color`
+  suportados — hoje só `bomb` = "💣 Bomb Clássico", já com a propriedade `color`
   usada pelo tema do lobby; usada pelo seletor de modo do editor, para validar
   arquivos importados e para renderizar os chips de modo do lobby).
 - **`uuid()`:** gera id único com fallback — `crypto.randomUUID()` só existe em
@@ -733,13 +733,21 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
      variável CSS `--mode-color` — a tela tem `transition` de ~0,6s, então as
      cores (bordas, títulos) animam ao trocar de modo. Os chips ficam **direto
      no lobby**, junto do botão **"Mapas & Regras"** (só aparece para o host).
+     A navegação por controle no lobby segue esta ordem fixa (`getFocusables`):
+     **⚙ configurações → "Mapas & Regras" → chips de modo → seletores de
+     controle/teclado dos jogadores → Iniciar partida / Convidar / Sair**
+     (e o caminho reverso percorre os mesmos itens ao contrário); após clicar
+     em chip ou card de mapa, `renderUiFocuses()` é chamada para o destaque de
+     foco não sumir até o próximo movimento.
    - `renderLobbyMaps()` e `renderLobbyRules()` preenchem o modal
      **`#hostConfigPanel`** ("Mapas & Regras da partida"), que **não fica na
      tela do lobby** — abre/fecha pelo botão do host, pelo ✕, pelo fundo, por
      Escape ou pelo botão B do controle. Mapas: grade com pré-visualização
      (mini-canvas desenhado por `drawMapPreview`) separada em **nativos** e
-     **meus mapas**; o host clica para incluir/retirar do rodízio
-     (`room.mapSelection`; sem seleção = todos). Regras: sliders de
+      **meus mapas** (cada grupo com borda própria); o host clica para
+      incluir/retirar da partida — os cards exibem os rótulos
+      **"✓ Incluído"** / **"Não incluído"**
+      (`room.mapSelection`; sem seleção = todos). Regras: sliders de
      **frequência de power-ups** (preparado para o recurso futuro),
      **velocidade dos jogadores** e **limite de pontuação**, cada um com botão
      ↺ de reset individual para o padrão (`DEFAULT_ROOM_SETTINGS`); gravam em
@@ -822,7 +830,10 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
 - **Painel de propriedades:** X, Y, Largura, Altura (inputs numéricos) e cor
   individual da plataforma (color picker); cor do fundo do mapa; nome do mapa;
   **seletor de modo de jogo** (`GAME_MODES`) — define para qual modo o arquivo
-  serve.
+  serve; visualmente é estilizado como um **chip de modo do lobby** (pill com
+  bolinha na cor do modo via `--chip-color`, atualizada por
+  `updateModeChipTheme()` ao trocar/carregar mapa). O botão **"← Voltar"**
+  usa a mesma cor do botão "Convidar" do lobby.
 - **Música do mapa:** *Padrão do jogo (aleatória)*, *Nativa* (gm1–gm11) ou
   *Personalizada* — upload de áudio (máx. `MAX_MAP_MUSIC_SIZE` = 2,5MB), salvo
   como data URL em `bombPartyCustomMusicsV1` (compartilhado entre abas → toca

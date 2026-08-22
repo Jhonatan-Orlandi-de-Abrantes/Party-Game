@@ -40,7 +40,7 @@ function newMap() {
   return {
     id: uuid(),
     name: 'Novo mapa',
-    mode: GAME_MODES[0].id,
+    mode: [GAME_MODES[0].id],
     bg: '#bfe8ff',
     platforms: [
       { x: 0, y: 500, width: 1080, height: 40, color: DEFAULT_PALETTE[0] }
@@ -73,12 +73,16 @@ export function initMapEditor() {
   if (initialized) return;
   initialized = true;
 
-  const modeSelect = $('mapModeSelect');
+  const modeChips = $('mapModeChips');
   for (const mode of GAME_MODES) {
-    const option = document.createElement('option');
-    option.value = mode.id;
-    option.textContent = mode.name;
-    modeSelect.appendChild(option);
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'map-mode-chip';
+    chip.dataset.modeId = mode.id;
+    chip.style.setProperty('--chip-color', mode && mode.color ? mode.color : '#ff6b6b');
+    chip.textContent = mode.name;
+    chip.addEventListener('click', () => toggleWorkingMode(mode.id));
+    modeChips.appendChild(chip);
   }
 
   const musicSelect = $('mapMusicSelect');
@@ -113,7 +117,7 @@ export function initMapEditor() {
     syncAllInputs();
     renderCanvas();
     renderSavedList();
-    showEditorNotice('Novo mapa criado.');
+    showEditorNotice('Novo mapa criado.', 'success');
   });
 
   $('mapSaveBtn').addEventListener('click', () => {
@@ -138,13 +142,6 @@ export function initMapEditor() {
   $('mapNameInput').addEventListener('input', () => {
     workingMap.name = $('mapNameInput').value.trim() || 'Sem nome';
     markDirty();
-  });
-
-  $('mapModeSelect').addEventListener('change', () => {
-    workingMap.mode = $('mapModeSelect').value;
-    updateModeChipTheme();
-    markDirty();
-    renderSavedList();
   });
 
   $('mapBgColorInput').addEventListener('input', () => {
@@ -173,7 +170,7 @@ export function initMapEditor() {
   $('mapPropColor').addEventListener('input', () => {
     const platform = getSelectedPlatform();
     if (!platform) {
-      showEditorNotice('Nenhuma plataforma selecionada.');
+      showEditorNotice('Nenhuma plataforma selecionada.', 'error');
       $('mapPropColor').value = DEFAULT_PALETTE[0];
       $('mapPropColorHex').textContent = DEFAULT_PALETTE[0].toUpperCase();
       return;
@@ -247,7 +244,7 @@ function spawnAt(point) {
 function deleteSelectedSpawn() {
   if (!workingMap || !Array.isArray(workingMap.spawns)) return;
   if (selectedSpawn < 0 || !workingMap.spawns[selectedSpawn]) {
-    showEditorNotice('Nenhum spawn selecionado.');
+    showEditorNotice('Nenhum spawn selecionado.', 'error');
     return;
   }
   workingMap.spawns.splice(selectedSpawn, 1);
@@ -258,12 +255,20 @@ function deleteSelectedSpawn() {
 
 let editorToastTimer = null;
 
-function showEditorNotice(message) {
-  showNotice($('mapEditorNotice'), message);
+function showEditorNotice(message, type) {
+  const notice = $('mapEditorNotice');
+  notice.classList.remove('notice-error', 'notice-success');
+  if (type === 'error') notice.classList.add('notice-error');
+  else if (type === 'success') notice.classList.add('notice-success');
+  showNotice(notice, message);
+  setTimeout(() => {
+    if (!notice.textContent) notice.classList.remove('notice-error', 'notice-success');
+  }, 4600);
   const toast = $('mapEditorToast');
   if (!toast) return;
   toast.textContent = message;
-  toast.classList.remove('hidden');
+  toast.classList.remove('hidden', 'editor-toast-error', 'editor-toast-success');
+  toast.classList.add(type === 'success' ? 'editor-toast-success' : 'editor-toast-error');
   clearTimeout(editorToastTimer);
   editorToastTimer = setTimeout(() => toast.classList.add('hidden'), 4500);
 }
@@ -271,7 +276,7 @@ function showEditorNotice(message) {
 function applyPropInput(prop, rawValue) {
   const platform = getSelectedPlatform();
   if (!platform) {
-    showEditorNotice('Nenhuma plataforma selecionada.');
+    showEditorNotice('Nenhuma plataforma selecionada.', 'error');
     syncPlatformInputs();
     return;
   }
@@ -289,11 +294,11 @@ function applyPropInput(prop, rawValue) {
 function duplicateSelected() {
   const platform = getSelectedPlatform();
   if (!platform) {
-    showEditorNotice('Nenhuma plataforma selecionada.');
+    showEditorNotice('Nenhuma plataforma selecionada.', 'error');
     return;
   }
   if (workingMap.platforms.length >= MAX_MAP_PLATFORMS) {
-    showEditorNotice(`Limite de ${MAX_MAP_PLATFORMS} plataformas.`);
+    showEditorNotice(`Limite de ${MAX_MAP_PLATFORMS} plataformas.`, 'error');
     return;
   }
   const copy = {
@@ -311,7 +316,7 @@ function duplicateSelected() {
 function deleteSelected() {
   if (!workingMap) return;
   if (selectedIndex < 0) {
-    showEditorNotice('Nenhuma plataforma selecionada.');
+    showEditorNotice('Nenhuma plataforma selecionada.', 'error');
     return;
   }
   workingMap.platforms.splice(selectedIndex, 1);
@@ -368,7 +373,7 @@ function onPointerDown(event) {
       const s = workingMap.spawns[hit];
       drag = { mode: 'spawnMove', index: hit, offsetX: point.x - s.x, offsetY: point.y - s.y };
     } else if (workingMap.spawns.length >= MAX_SPAWNS) {
-      showEditorNotice(`Limite de ${MAX_SPAWNS} pontos de nascimento (um por jogador).`);
+      showEditorNotice(`Limite de ${MAX_SPAWNS} pontos de nascimento (um por jogador).`, 'error');
       return;
     } else {
       workingMap.spawns.push({ x: Math.round(point.x), y: Math.round(point.y) });
@@ -391,6 +396,19 @@ function onPointerDown(event) {
     const p = getSelectedPlatform();
     drag = { mode: 'resize', corner, origin: { ...p } };
     return;
+  }
+
+  if (tool === 'select') {
+    const spawnHit = spawnAt(point);
+    if (spawnHit >= 0) {
+      selectedSpawn = spawnHit;
+      selectedIndex = -1;
+      syncPlatformInputs();
+      const s = workingMap.spawns[spawnHit];
+      drag = { mode: 'spawnMove', index: spawnHit, offsetX: point.x - s.x, offsetY: point.y - s.y };
+      renderCanvas();
+      return;
+    }
   }
 
   const hit = platformAt(point);
@@ -487,7 +505,7 @@ function onPointerUp() {
       syncPlatformInputs();
       markDirty();
     } else {
-      showEditorNotice(`Limite de ${MAX_MAP_PLATFORMS} plataformas.`);
+      showEditorNotice(`Limite de ${MAX_MAP_PLATFORMS} plataformas.`, 'error');
     }
   } else if (drag.mode === 'spawnMove') {
     markDirty();
@@ -601,23 +619,90 @@ function renderCanvas() {
     ctx.fillText('P' + (index + 1), spawn.x, spawn.y - 29.5);
     ctx.textBaseline = 'alphabetic';
   });
+
+  renderPlatformList();
+}
+
+function renderPlatformList() {
+  const list = $('mapPlatformList');
+  const count = $('mapPlatformCount');
+  if (!list || !count || !workingMap) return;
+  count.textContent = workingMap.platforms.length;
+  list.innerHTML = '';
+  if (workingMap.platforms.length === 0) {
+    const empty = document.createElement('li');
+    empty.className = 'map-platform-empty';
+    empty.textContent = 'Nenhuma plataforma ainda — use a ferramenta "+ Plataforma".';
+    list.appendChild(empty);
+    return;
+  }
+  workingMap.platforms.forEach((platform, index) => {
+    const li = document.createElement('li');
+    li.className = 'map-platform-item' + (index === selectedIndex && selectedSpawn < 0 ? ' selected' : '');
+
+    const swatch = document.createElement('span');
+    swatch.className = 'map-platform-swatch';
+    swatch.style.background = platform.color || DEFAULT_PALETTE[index % DEFAULT_PALETTE.length];
+
+    const info = document.createElement('span');
+    info.className = 'map-platform-info';
+    info.textContent = `#${index + 1} · ${platform.width}×${platform.height} · (${platform.x}, ${platform.y})`;
+
+    li.appendChild(swatch);
+    li.appendChild(info);
+    li.title = 'Clique para selecionar esta plataforma';
+    li.addEventListener('click', () => {
+      selectedSpawn = -1;
+      selectedIndex = index;
+      syncPlatformInputs();
+      renderCanvas();
+    });
+    list.appendChild(li);
+  });
 }
 
 function syncAllInputs() {
   if (!workingMap) return;
   $('mapNameInput').value = workingMap.name;
-  $('mapModeSelect').value = workingMap.mode || GAME_MODES[0].id;
-  updateModeChipTheme();
+  syncModeChips();
   $('mapBgColorInput').value = workingMap.bg || '#bfe8ff';
   $('mapBgColorHex').textContent = (workingMap.bg || '#bfe8ff').toUpperCase();
   syncPlatformInputs();
   syncMusicInputs();
 }
 
-function updateModeChipTheme() {
-  const select = $('mapModeSelect');
-  const mode = GAME_MODES.find(m => m.id === select.value) || GAME_MODES[0];
-  select.style.setProperty('--chip-color', mode && mode.color ? mode.color : '#ff6b6b');
+function workingModes() {
+  if (!workingMap) return [];
+  const raw = Array.isArray(workingMap.mode) ? workingMap.mode : [workingMap.mode];
+  const modes = [...new Set(raw.filter(m => GAME_MODES.some(g => g.id === m)))];
+  if (modes.length === 0 && !Array.isArray(workingMap.mode)) {
+    return typeof workingMap.mode === 'string' ? [] : [GAME_MODES[0].id];
+  }
+  return modes;
+}
+
+function toggleWorkingMode(id) {
+  let modes = workingModes();
+  if (modes.includes(id)) {
+    if (modes.length === 1) {
+      showEditorNotice('O mapa precisa de pelo menos um modo de jogo.', 'error');
+      return;
+    }
+    modes = modes.filter(m => m !== id);
+  } else {
+    modes.push(id);
+  }
+  workingMap.mode = GAME_MODES.filter(g => modes.includes(g.id)).map(g => g.id);
+  syncModeChips();
+  markDirty();
+  renderSavedList();
+}
+
+function syncModeChips() {
+  const modes = workingModes();
+  document.querySelectorAll('#mapModeChips .map-mode-chip').forEach(chip => {
+    chip.classList.toggle('selected', modes.includes(chip.dataset.modeId));
+  });
 }
 
 function syncPlatformInputs() {
@@ -671,11 +756,11 @@ function applyMusicSelection(value) {
 
 function uploadCustomMusic(file) {
   if (!file.type.startsWith('audio/')) {
-    showEditorNotice('Arquivo não é um áudio.');
+    showEditorNotice('Arquivo não é um áudio.', 'error');
     return;
   }
   if (file.size > MAX_MAP_MUSIC_SIZE) {
-    showEditorNotice(`Áudio muito grande. Máximo: ${Math.round(MAX_MAP_MUSIC_SIZE / 100000) / 10}MB.`);
+    showEditorNotice(`Áudio muito grande. Máximo: ${Math.round(MAX_MAP_MUSIC_SIZE / 100000) / 10}MB.`, 'error');
     return;
   }
   const reader = new FileReader();
@@ -684,15 +769,15 @@ function uploadCustomMusic(file) {
     try {
       putCustomMusic(id, { name: file.name, data: reader.result });
     } catch (error) {
-      showEditorNotice('Espaço insuficiente no navegador para salvar este áudio.');
+      showEditorNotice('Espaço insuficiente no navegador para salvar este áudio.', 'error');
       return;
     }
     workingMap.music = { type: 'custom', id, name: file.name };
     markDirty();
     syncMusicInputs();
-    showEditorNotice(`Música "${file.name}" adicionada ao mapa.`);
+    showEditorNotice(`Música "${file.name}" adicionada ao mapa.`, 'success');
   };
-  reader.onerror = () => showEditorNotice('Falha ao ler o arquivo.');
+  reader.onerror = () => showEditorNotice('Falha ao ler o arquivo.', 'error');
   reader.readAsDataURL(file);
 }
 
@@ -742,10 +827,10 @@ function saveWorkingMap(withNotice) {
   try {
     saveCustomMaps(maps);
   } catch (error) {
-    showEditorNotice('Não foi possível salvar (armazenamento cheio).');
+    showEditorNotice('Não foi possível salvar (armazenamento cheio).', 'error');
     return;
   }
-  if (withNotice) showEditorNotice(`Mapa "${workingMap.name}" salvo!`);
+  if (withNotice) showEditorNotice(`Mapa "${workingMap.name}" salvo!`, 'success');
   renderSavedList();
 }
 
@@ -770,8 +855,13 @@ function renderSavedList() {
 
     const mode = document.createElement('span');
     mode.className = 'map-saved-mode';
-    const modeDef = GAME_MODES.find(m => m.id === (entry.mode || 'bomb'));
-    mode.textContent = modeDef ? modeDef.name : entry.mode;
+    const rawModes = Array.isArray(entry.mode) ? entry.mode : [(entry.mode || 'bomb')];
+    mode.textContent = rawModes
+      .map(id => {
+        const def = GAME_MODES.find(m => m.id === id);
+        return def ? def.name : id;
+      })
+      .join(' + ');
 
     const editBtn = document.createElement('button');
     editBtn.className = 'secondary';
@@ -833,10 +923,11 @@ function slugify(name) {
 }
 
 function exportMap() {
+  const modes = workingModes();
   const payload = {
     format: 'partygame-map',
     version: 1,
-    mode: workingMap.mode || GAME_MODES[0].id,
+    mode: modes.length > 0 ? modes : [GAME_MODES[0].id],
     name: workingMap.name,
     bg: workingMap.bg,
     platforms: workingMap.platforms.map(p => ({ ...p })),
@@ -858,7 +949,7 @@ function exportMap() {
   link.download = `${slugify(payload.name)}.pgmap`;
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
-  showEditorNotice('Mapa exportado!');
+  showEditorNotice('Mapa exportado!', 'success');
 }
 
 function sanitizePlatform(raw) {
@@ -892,20 +983,22 @@ function importMapFile(file) {
     try {
       data = JSON.parse(reader.result);
     } catch (error) {
-      showEditorNotice('Arquivo inválido (não é um mapa do Party Game).');
+      showEditorNotice('Arquivo inválido (não é um mapa do Party Game).', 'error');
       return;
     }
     if (!data || data.format !== 'partygame-map' || !Array.isArray(data.platforms)) {
-      showEditorNotice('Arquivo inválido (formato desconhecido).');
+      showEditorNotice('Arquivo inválido (formato desconhecido).', 'error');
       return;
     }
-    const mode = typeof data.mode === 'string' ? data.mode : 'bomb';
-    if (!GAME_MODES.some(m => m.id === mode)) {
-      showEditorNotice(`Este arquivo é para o modo "${mode}", que não é suportado nesta versão.`);
+    const rawModes = Array.isArray(data.mode) ? data.mode : [typeof data.mode === 'string' ? data.mode : 'bomb'];
+    const modes = [...new Set(rawModes.filter(m => typeof m === 'string'))]
+      .filter(m => GAME_MODES.some(g => g.id === m));
+    if (modes.length === 0) {
+      showEditorNotice('Este arquivo é para um modo que não é suportado nesta versão.', 'error');
       return;
     }
     if (data.platforms.length > MAX_MAP_PLATFORMS) {
-      showEditorNotice(`O mapa tem ${data.platforms.length} plataformas (máximo ${MAX_MAP_PLATFORMS}).`);
+      showEditorNotice(`O mapa tem ${data.platforms.length} plataformas (máximo ${MAX_MAP_PLATFORMS}).`, 'error');
       return;
     }
 
@@ -918,7 +1011,7 @@ function importMapFile(file) {
       try {
         putCustomMusic(id, { name: musicImported.name || 'Música importada', data: musicImported.data });
       } catch (error) {
-        showEditorNotice('Espaço insuficiente para importar a música do arquivo (o resto do mapa foi importado).');
+        showEditorNotice('Espaço insuficiente para importar a música do arquivo (o resto do mapa foi importado).', 'error');
       }
       music = { type: 'custom', id, name: musicImported.name || 'Música importada' };
     } else if (musicImported.type === 'custom') {
@@ -929,7 +1022,7 @@ function importMapFile(file) {
     workingMap = {
       id: uuid(),
       name: (typeof data.name === 'string' && data.name.trim()) || 'Mapa importado',
-      mode,
+      mode: modes,
       bg: typeof data.bg === 'string' && /^#[0-9a-f]{6}$/i.test(data.bg) ? data.bg : '#bfe8ff',
       platforms: data.platforms.map(sanitizePlatform),
       spawns: sanitizeSpawns(data.spawns),
@@ -943,8 +1036,8 @@ function importMapFile(file) {
     syncAllInputs();
     renderCanvas();
     renderSavedList();
-    showEditorNotice(`Mapa "${workingMap.name}" importado!`);
+    showEditorNotice(`Mapa "${workingMap.name}" importado!`, 'success');
   };
-  reader.onerror = () => showEditorNotice('Falha ao ler o arquivo.');
+  reader.onerror = () => showEditorNotice('Falha ao ler o arquivo.', 'error');
   reader.readAsText(file);
 }

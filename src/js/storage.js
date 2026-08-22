@@ -100,11 +100,11 @@ function writePref(prefix, playerId, value) {
 }
 
 export function saveGamepadAssignment(playerId, index) {
-  writePref(GAMEPAD_PREFIX, playerId, String(index));
+  localStorage.setItem(GAMEPAD_PREFIX + playerId, String(index));
 }
 
 export function getGamepadAssignment(playerId) {
-  const value = readPref(GAMEPAD_PREFIX, playerId);
+  const value = localStorage.getItem(GAMEPAD_PREFIX + playerId);
   return value === null ? -1 : Number(value);
 }
 
@@ -149,7 +149,22 @@ export function saveCustomKeys(playerId, keys) {
 export function getCustomKeys(playerId) {
   try {
     const raw = readPref(KEYS_PREFIX, playerId);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const keys = JSON.parse(raw);
+    const actions = ['left', 'right', 'jump', 'dash'];
+    for (const action of actions) {
+      const value = keys[action];
+      if (typeof value === 'string' && /^f\d{1,2}$/.test(value)) delete keys[action];
+    }
+    if (
+      keys.left === 'a' && keys.right === 'd' &&
+      keys.jump === 'w' && keys.dash === 'shift'
+    ) {
+      localStorage.removeItem(KEYS_PREFIX + playerId);
+      localStorage.removeItem(deviceKey(KEYS_PREFIX, playerId));
+      return null;
+    }
+    return keys;
   } catch (error) {
     return null;
   }

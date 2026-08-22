@@ -1,5 +1,5 @@
-import { GAME_MODE_NAME, GAME_MODES, DEFAULT_ROOM_SETTINGS, PLAYER_WIDTH, PLAYER_HEIGHT, SPAWN_COLORS } from './constants.js';
-import { getPlayableMaps } from './maps.js';
+import { GAME_MODES, DEFAULT_ROOM_SETTINGS, PLAYER_WIDTH, PLAYER_HEIGHT, SPAWN_COLORS, MAX_MAP_PLATFORMS, uuid } from './constants.js';
+import { getPlayableMaps, playableMapKey } from './maps.js';
 import { state, getMyPlayer, isHost, saveLocalPlayers } from './state.js';
 import * as rooms from './rooms.js';
 import {
@@ -49,7 +49,10 @@ import {
   getTouchEnabled,
   saveTouchStyle,
   getTouchStyle,
-  saveEquippedCosmetics
+  saveEquippedCosmetics,
+  loadCustomMaps,
+  saveCustomMaps,
+  putCustomMusic
 } from './storage.js';
 
 const $ = (id) => document.getElementById(id);
@@ -81,7 +84,7 @@ export const refs = {
   scoreboard: $('scoreboard'),
   scoreboardList: $('scoreboardList'),
   returnLobbyBtn: $('returnLobbyBtn'),
-  gameModeEl: $('gameMode'),
+
   settingsGearBtn: $('settingsGearBtn'),
   settingsPanel: $('settingsPanel'),
   settingsCloseBtn: $('settingsCloseBtn'),
@@ -166,6 +169,7 @@ export const refs = {
   cosmeticsCodeImportBtn: $('cosmeticsCodeImportBtn'),
   cosmeticsJsFileInput: $('cosmeticsJsFileInput'),
   lobbyModeList: $('lobbyModeList'),
+  lobbyMapsModeName: $('lobbyMapsModeName'),
   lobbyNativeMaps: $('lobbyNativeMaps'),
   lobbyCustomMaps: $('lobbyCustomMaps'),
   powerupFreqInput: $('powerupFreqInput'),
@@ -194,17 +198,18 @@ const uiFocusMap = new Map();
 let settingsOpenByController = false;
 let renderedPlayerIds = new Set();
 let padConnectIndex = -1;
+let lobbyMapImportInput = null;
 
 const FOCUS_SELECTOR = 'input:not([type="hidden"]), select, button, .hat-option';
 
 export function initUi() {
-  refs.gameModeEl.textContent = GAME_MODE_NAME;
-
   refs.settingsGearBtn.addEventListener('click', () => {
     const wasOpen = refs.settingsPanel.classList.contains('open');
-    if (!wasOpen && state.uiPadPlayerId) state.configTargetId = state.uiPadPlayerId;
     toggleSettingsPanel();
-    if (!wasOpen) renderSettings();
+    if (!wasOpen) {
+      state.configTargetId = state.myPlayerId;
+      renderSettings();
+    }
     if (wasOpen) settingsOpenByController = false;
     playClick();
   });
@@ -356,6 +361,13 @@ export function initUi() {
     });
   }
 
+  lobbyMapImportInput = document.createElement('input');
+  lobbyMapImportInput.type = 'file';
+  lobbyMapImportInput.accept = '.pgmap,application/json';
+  lobbyMapImportInput.style.display = 'none';
+  document.body.appendChild(lobbyMapImportInput);
+  lobbyMapImportInput.addEventListener('change', handleLobbyMapImport);
+
   document.querySelectorAll('.key-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const player = getSettingsPlayer();
@@ -373,6 +385,10 @@ export function initUi() {
     if (!rebindingAction) return;
     event.preventDefault();
     event.stopImmediatePropagation();
+    if (/^f\d{1,2}$/.test(event.key.toLowerCase())) {
+      event.preventDefault();
+      return;
+    }
     if (event.key === 'Escape') {
       cancelRebind();
       return;
@@ -786,6 +802,7 @@ export function moveUiFocus(dx, dy, pid, isAnalog) {
     setUiFocusIndex(0, pid);
     return;
   }
+  if (index >= list.length) index = list.length - 1;
   const target = list[index];
 
   if (target.closest && target.closest('#cosmeticsModal')) {
@@ -934,15 +951,31 @@ function moveHatGridFocus(list, dx, dy, pid) {
   const row = Math.floor(current / cols);
   let next = current;
   if (dy !== 0) {
-    if (dy > 0) {
-      if (row >= Math.floor((options.length - 1) / cols)) {
-        setUiFocusIndex(options.length, pid);
-        return;
+    const baseRect = options[current].getBoundingClientRect();
+    const baseX = baseRect.left + baseRect.width / 2;
+    const baseY = baseRect.top + baseRect.height / 2;
+    let best = -1;
+    let bestScore = Infinity;
+    options.forEach((opt, i) => {
+      if (i === current) return;
+      const r = opt.getBoundingClientRect();
+      const cy = r.top + r.height / 2;
+      if (dy > 0 ? cy <= baseY + 2 : cy >= baseY - 2) return;
+      const cx = r.left + r.width / 2;
+      const score = Math.abs(cx - baseX) * 4 + Math.abs(cy - baseY);
+      if (score < bestScore) {
+        bestScore = score;
+        best = i;
       }
-      next = Math.min(options.length - 1, current + cols);
-    } else {
-      next = current >= cols ? current - cols : current;
+    });
+    if (best >= 0) {
+      setUiFocusIndex(list.indexOf(options[best]), pid);
+      return;
     }
+    if (dy > 0) {
+      setUiFocusIndex(options.length, pid);
+    }
+    return;
   } else if (dx !== 0) {
     const rowStart = row * cols;
     const rowLast = Math.min(options.length - 1, rowStart + cols - 1);
@@ -1010,10 +1043,10 @@ export function activateUiFocus(pid) {
     }
   }
   if (el === refs.settingsGearBtn) {
-    const id = pid || state.uiPadPlayerId;
+    const id = pid || state.myPlayerId;
     const wasOpen = refs.settingsPanel.classList.contains('open');
     el.click();
-    if (id) state.configTargetId = id;
+    state.configTargetId = id;
     renderSettings();
     settingsOpenByController = !wasOpen;
     uiFocusMap.set(focusKey(pid), -1);
@@ -1035,7 +1068,7 @@ export function activateUiFocus(pid) {
     return;
   }
   if (el.tagName === 'BUTTON' || el.type === 'color' || el.classList.contains('hat-option')) {
-    if (el.type === 'color' && pid) {
+    if (el.type === 'color') {
       openColorPalette(el, pid);
       return;
     }
@@ -1268,6 +1301,8 @@ export function hidePadConnect() {
   padConnectIndex = -1;
   refs.padModal.classList.add('hidden');
   refs.padNewNameRow.classList.add('hidden');
+  uiFocusMap.delete('kb');
+  renderUiFocuses();
 }
 
 export function assignPadToPlayer(playerId) {
@@ -1351,6 +1386,7 @@ function updateHostConfigHint() {
 export function openHostConfig() {
   if (!isHost()) return;
   if (!refs.hostConfigPanel) return;
+  updateLobbyMapsTitle();
   updateHostConfigHint();
   clearUiFocuses();
   refs.hostConfigPanel.classList.remove('hidden');
@@ -1410,7 +1446,8 @@ function applyModeTheme(modeId) {
 const HOW_TO_TEXT = {
   bomb: 'Encoste em outro jogador para passar a bomba. Após 15 segundos ela explode em quem a segura. Use o dash para escapar. Cada jogador pode escolher seu controle (ou teclado) na lista de jogadores acima.',
   egg: 'Um jogador começa com o ovo: cada 0,2s com ele vale 1 ponto — encoste em quem o segura para roubar! A cada 10 segundos, quem tiver MENOS pontos explode. O último vivo ganha mais pontos no placar.',
-  run: 'Um jogador é o MONSTRO! Corra e sobreviva aos 12 segundos — cada encostão do monstro custa um coração (você tem 2). Quem sobreviver ganha mais pontos; o monstro ganha mais quanto mais jogadores eliminar.'
+  run: 'Um jogador é o MONSTRO! Corra e sobreviva aos 12 segundos — cada encostão do monstro custa um coração (você tem 2). Quem sobreviver ganha mais pontos; o monstro ganha mais quanto mais jogadores eliminar.',
+  rhythm: 'Pressione a direção das setas na ordem mostrada mais rápido que os outros. Após a sequência, o jogador com menos pontos sofre a consequência... Cada sequência fica mais rápida e longa! No teclado use: W, A, S, D ou as setas (CIMA, BAIXO, ESQUERDA, DIREITA). No controle use: O analógico ou as setas direcionais.'
 };
 
 function updateHowToText(modeId) {
@@ -1437,6 +1474,7 @@ function renderLobbyModes() {
       live.mode = mode.id;
       saveRooms();
       renderLobbyModes();
+      renderLobbyMaps();
       renderUiFocuses();
       playClick();
     });
@@ -1483,11 +1521,13 @@ function buildLobbyMapGrid(container, maps, keyOf, isSelected, onToggle) {
     container.appendChild(empty);
     return;
   }
+  const rhythmMode = state.currentRoom && state.currentRoom.mode === 'rhythm';
   maps.forEach(map => {
     const key = keyOf(map);
+    const locked = rhythmMode && !map.custom && !map.nativeRhythm;
     const card = document.createElement('button');
     card.type = 'button';
-    card.className = 'lobby-map-card' + (isSelected(key) ? ' selected' : '');
+    card.className = 'lobby-map-card' + (isSelected(key) && !locked ? ' selected' : '') + (locked ? ' locked' : '');
     card.disabled = !isHost();
     const canvasEl = document.createElement('canvas');
     canvasEl.width = 216;
@@ -1495,18 +1535,33 @@ function buildLobbyMapGrid(container, maps, keyOf, isSelected, onToggle) {
     drawMapPreview(canvasEl, map);
     const label = document.createElement('span');
     label.className = 'lobby-map-name';
-    label.textContent = map.name;
+    label.textContent = locked ? '🔒 ' + map.name : map.name;
     card.appendChild(canvasEl);
     card.appendChild(label);
-    card.addEventListener('click', () => onToggle(key));
+    card.addEventListener('click', () => {
+      if (locked) {
+        showLobbyAlert('Este mapa não está disponível no modo Ritmo!', 'leave');
+        return;
+      }
+      onToggle(key);
+    });
     container.appendChild(card);
   });
+}
+
+function updateLobbyMapsTitle() {
+  if (!refs.lobbyMapsModeName) return;
+  const room = state.currentRoom;
+  const current = GAME_MODES.find(m => m.id === ((room && room.mode) || 'bomb')) || GAME_MODES[0];
+  refs.lobbyMapsModeName.textContent = current ? current.name : '';
+  refs.lobbyMapsModeName.style.color = current && current.color ? current.color : '';
 }
 
 function renderLobbyMaps() {
   const room = state.currentRoom;
   if (!room || !refs.lobbyNativeMaps || !refs.lobbyCustomMaps) return;
-  const all = getPlayableMaps();
+  updateLobbyMapsTitle();
+  const all = getPlayableMaps(room.mode || 'bomb');
   const natives = all.filter(map => !map.custom);
   const customs = all.filter(map => map.custom);
   const selection = Array.isArray(room.mapSelection) ? room.mapSelection : null;
@@ -1522,7 +1577,7 @@ function renderLobbyMaps() {
     const liveSelection = Array.isArray(live.mapSelection) ? live.mapSelection : null;
     const current = new Set(liveSelection && liveSelection.length > 0
       ? liveSelection
-      : pool.map((m, i) => (m.custom ? m.customId : 'native:' + i)));
+      : pool.map((m, i) => playableMapKey(m, i)));
     if (current.has(key)) current.delete(key);
     else current.add(key);
     live.mapSelection = current.size >= pool.length ? [] : [...current];
@@ -1531,8 +1586,116 @@ function renderLobbyMaps() {
     renderUiFocuses();
   };
 
-  buildLobbyMapGrid(refs.lobbyNativeMaps, natives, map => 'native:' + natives.indexOf(map), isSelected, toggle);
+  buildLobbyMapGrid(refs.lobbyNativeMaps, natives, map => playableMapKey(map, natives.indexOf(map)), isSelected, toggle);
   buildLobbyMapGrid(refs.lobbyCustomMaps, customs, map => map.customId, isSelected, toggle);
+  appendCustomImportButton();
+}
+
+function appendCustomImportButton() {
+  if (!refs.lobbyCustomMaps) return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'lobby-map-import';
+  btn.textContent = '📂 Importar mapa';
+  btn.disabled = !isHost();
+  if (!isHost()) btn.title = 'Somente o host pode importar mapas.';
+  btn.addEventListener('click', () => {
+    lobbyMapImportInput.click();
+  });
+  refs.lobbyCustomMaps.appendChild(btn);
+}
+
+function clampMapNumber(value, min, max) {
+  const n = Math.round(Number(value));
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : min;
+}
+
+function sanitizeLobbyPlatform(raw) {
+  const width = clampMapNumber(raw.width, 8, 1080);
+  const height = clampMapNumber(raw.height, 8, 540);
+  return {
+    x: clampMapNumber(raw.x, 0, 1080 - width),
+    y: clampMapNumber(raw.y, 0, 540 - height),
+    width,
+    height,
+    color: typeof raw.color === 'string' && /^#[0-9a-f]{6}$/i.test(raw.color) ? raw.color : '#a3d97a'
+  };
+}
+
+function sanitizeLobbySpawns(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 4).map(spawn => ({
+    x: clampMapNumber(spawn && spawn.x, 0, 1080),
+    y: clampMapNumber(spawn && spawn.y, 0, 540)
+  }));
+}
+
+function handleLobbyMapImport(event) {
+  if (!isHost()) {
+    showLobbyAlert('Somente o host pode importar mapas!', 'leave');
+    return;
+  }
+  const file = event.target.files[0];
+  event.target.value = '';
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let data;
+    try {
+      data = JSON.parse(reader.result);
+    } catch (error) {
+      showLobbyAlert('Arquivo inválido (não é um mapa do Party Game).', 'leave');
+      return;
+    }
+    if (!data || data.format !== 'partygame-map' || !Array.isArray(data.platforms)) {
+      showLobbyAlert('Arquivo inválido (formato desconhecido).', 'leave');
+      return;
+    }
+    const rawModes = Array.isArray(data.mode) ? data.mode : [typeof data.mode === 'string' ? data.mode : 'bomb'];
+    const modes = [...new Set(rawModes.filter(m => typeof m === 'string'))]
+      .filter(m => GAME_MODES.some(g => g.id === m));
+    if (modes.length === 0) {
+      showLobbyAlert('Este arquivo é para um modo que não é suportado nesta versão.', 'leave');
+      return;
+    }
+    if (data.platforms.length > MAX_MAP_PLATFORMS) {
+      showLobbyAlert(`O mapa tem ${data.platforms.length} plataformas (máximo ${MAX_MAP_PLATFORMS}).`, 'leave');
+      return;
+    }
+
+    const musicImported = data.music && typeof data.music === 'object' ? data.music : { type: 'default' };
+    let music = { type: 'default' };
+    if (musicImported.type === 'native' && typeof musicImported.track === 'string') {
+      music = { type: 'native', track: musicImported.track };
+    } else if (musicImported.type === 'custom' && typeof musicImported.data === 'string' && musicImported.data.startsWith('data:audio')) {
+      const id = uuid();
+      try {
+        putCustomMusic(id, { name: musicImported.name || 'Música importada', data: musicImported.data });
+      } catch (error) {
+        showLobbyAlert('Espaço insuficiente para a música (o resto do mapa foi importado).', 'leave');
+      }
+      music = { type: 'custom', id, name: musicImported.name || 'Música importada' };
+    } else if (musicImported.type === 'custom') {
+      music = { type: 'custom', id: null, name: musicImported.name || null };
+    }
+
+    const map = {
+      id: uuid(),
+      name: (typeof data.name === 'string' && data.name.trim()) || 'Mapa importado',
+      mode: modes,
+      bg: typeof data.bg === 'string' && /^#[0-9a-f]{6}$/i.test(data.bg) ? data.bg : '#bfe8ff',
+      platforms: data.platforms.map(sanitizeLobbyPlatform),
+      spawns: sanitizeLobbySpawns(data.spawns),
+      music,
+      updatedAt: Date.now()
+    };
+    saveCustomMaps([...loadCustomMaps(), map]);
+    renderLobbyMaps();
+    renderUiFocuses();
+    showLobbyAlert(`Mapa "${map.name}" importado!`, 'host');
+  };
+  reader.onerror = () => showLobbyAlert('Falha ao ler o arquivo.', 'leave');
+  reader.readAsText(file);
 }
 
 function renderLobbyRules() {
@@ -1554,6 +1717,18 @@ function renderLobbyRules() {
   refs.resetScoreLimitBtn.disabled = !host;
 }
 
+function primeLobbyFocus() {
+  const list = getFocusables();
+  const idx = list.indexOf(refs.startGameBtn);
+  if (idx < 0) return;
+  uiFocusMap.set('kb', idx);
+  for (let i = 0; i < 4; i++) {
+    const assigned = getGamepadAssignment(i);
+    if (assigned) uiFocusMap.set(assigned, idx);
+  }
+  renderUiFocuses();
+}
+
 export function showScreen(name) {
   state.currentScreen = name;
   clearUiFocuses();
@@ -1568,12 +1743,14 @@ export function showScreen(name) {
     closeSettingsPanel();
     closeHatPicker();
     closeHostConfig();
+    hidePadConnect();
   }
   if (name !== 'game') {
     hideResultsOverlay();
   }
   updateTouchVisibility();
   updateDonateVisibility();
+  if (name === 'lobby') primeLobbyFocus();
 }
 
 export function showNotice(element, message) {
@@ -1616,6 +1793,14 @@ export function updateGamepadStatus() {
   }
 }
 
+function padTakenByOther(index, exceptPlayerId) {
+  const room = state.currentRoom;
+  if (!room) return null;
+  return room.players.find(other =>
+    other.id !== exceptPlayerId && getGamepadAssignment(other.id) === index
+  ) || null;
+}
+
 function buildControlAssign(player, pads, canAssign) {
   const ctrlSelect = document.createElement('select');
   ctrlSelect.className = 'control-assign';
@@ -1629,7 +1814,8 @@ function buildControlAssign(player, pads, canAssign) {
   pads.forEach(pad => {
     const opt = document.createElement('option');
     opt.value = String(pad.index);
-    opt.textContent = `Pad ${pad.index + 1} · ${gamepadName(pad, pad.index)}`;
+    const takenBy = padTakenByOther(pad.index, player.id);
+    opt.textContent = `Pad ${pad.index + 1} · ${gamepadName(pad, pad.index)} · ${takenBy ? `em uso por ${takenBy.nickname}` : 'livre'}`;
     ctrlSelect.appendChild(opt);
   });
   ctrlSelect.value = padConnected ? String(assigned) : '-1';
@@ -1637,11 +1823,11 @@ function buildControlAssign(player, pads, canAssign) {
   ctrlSelect.addEventListener('change', () => {
     const chosen = Number(ctrlSelect.value);
     const room = state.currentRoom;
-    if (room) {
+    if (room && chosen >= 0) {
       const takenBy = room.players.find(other =>
         other.id !== player.id && getGamepadAssignment(other.id) === chosen
       );
-      if (takenBy && (chosen >= 0 || room.mode === 'local')) {
+      if (takenBy) {
         const currentAssignment = getGamepadAssignment(player.id);
         saveGamepadAssignment(takenBy.id, currentAssignment);
         saveGamepadAssignment(player.id, chosen);
@@ -1759,8 +1945,7 @@ export function renderLobby() {
         item.appendChild(score);
       }
 
-      const isMine = player.id === state.myPlayerId;
-      const canAssign = isMine || isHost() || (state.localPlayerIds || []).includes(player.id);
+      const canAssign = player.id === state.myPlayerId || isHost() || (state.localPlayerIds || []).includes(player.id);
       item.appendChild(buildControlAssign(player, connectedGamepads(), canAssign));
 
       refs.playerList.appendChild(item);
@@ -1853,13 +2038,25 @@ function renderScoreboard(board) {
 }
 
 export function formatControls(playerId) {
+  const gs = state.gameState;
+  if (gs && gs.mode === 'rhythm') {
+    return 'Ritmo: W/A/S/D ou setas ← ↑ ↓ →';
+  }
   const ctrl = getEffectiveControls(playerId);
-  if (!ctrl) return 'Mover: A/D, Pular: W, Dash: Shift';
-  const cap = key => key.charAt(0).toUpperCase() + key.slice(1);
-  return `Mover: ${cap(ctrl.left)}/${cap(ctrl.right)}, Pular: ${cap(ctrl.jump)}, Dash: ${cap(ctrl.dash)}`;
+  if (!ctrl) return 'Mover: A/D, Pular: Espaço, Dash: Shift';
+  const labelKey = key => {
+    if (key === ' ') return 'Espaço';
+    if (/^f\d{1,2}$/.test(key)) return key.toUpperCase();
+    return key.charAt(0).toUpperCase() + key.slice(1);
+  };
+  return `Mover: ${labelKey(ctrl.left)}/${labelKey(ctrl.right)}, Pular: ${labelKey(ctrl.jump)}, Dash: ${labelKey(ctrl.dash)}`;
 }
 
 export function formatGamepadControls() {
+  const gs = state.gameState;
+  if (gs && gs.mode === 'rhythm') {
+    return 'Ritmo: analógico esquerdo ou direcionais (dpad)';
+  }
   return 'Mover: Analógico, Pular: A, Dash: RT/LT';
 }
 
@@ -2065,11 +2262,9 @@ function updatePlayerCosmeticsInRoom() {
   const equipped = getEquippedList();
   const room = state.currentRoom;
   if (!room) return;
-  for (const player of room.players) {
-    if (state.localPlayerIds.includes(player.id) || player.id === state.myPlayerId) {
-      player.cosmetics = equipped;
-    }
-  }
+  const target = getSettingsPlayer();
+  if (!target || !room.players.includes(target)) return;
+  target.cosmetics = equipped;
   saveRooms();
 }
 

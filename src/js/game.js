@@ -3,7 +3,7 @@ import { getPlayerKeys } from './input.js';
 import { publishGameState, saveRooms } from './storage.js';
 import { setStarted } from './rooms.js';
 import { playSound, playPop } from './audio.js';
-import { getPlayableMaps } from './maps.js';
+import { getPlayableMaps, playableMapKey } from './maps.js';
 import {
   controlSets,
   MAX_BOMB_TIME,
@@ -24,7 +24,16 @@ import {
   EGG_SCORE_TICK,
   RUN_ROUND_TIME,
   RUN_LIVES,
-  MONSTER_HIT_COOLDOWN
+  MONSTER_HIT_COOLDOWN,
+  RHYTHM_BASE_LEN,
+  RHYTHM_MAX_LEN,
+  RHYTHM_BASE_WINDOW,
+  RHYTHM_WINDOW_STEP,
+  RHYTHM_MIN_WINDOW,
+  RHYTHM_WARN_TIME,
+  RHYTHM_SLAM_SPEED,
+  RHYTHM_RISE_SPEED,
+  RHYTHM_NEXT_DELAY
 } from './constants.js';
 
 const FLOOR_Y = 540;
@@ -35,6 +44,8 @@ const DEATH_ANIM_TIME = 1.2;
 const TRAIL_MAX_POINTS = 200;
 const TRAIL_GAP = 6;
 const lastTrailPoints = new Map();
+const RHYTHM_DIRS = ['left', 'right', 'up', 'down'];
+const lastRhythmKeys = new Map();
 
 let onRoundEnd = null;
 const usedMaps = new Set();
@@ -59,8 +70,34 @@ function isRunMode() {
   return gameMode() === 'run';
 }
 
+function isRhythmMode() {
+  return gameMode() === 'rhythm';
+}
+
+function rhythmSeqLength(round) {
+  return Math.min(RHYTHM_BASE_LEN + round - 1, RHYTHM_MAX_LEN);
+}
+
+function rhythmWindow(round) {
+  return Math.max(RHYTHM_MIN_WINDOW, RHYTHM_BASE_WINDOW - (round - 1) * RHYTHM_WINDOW_STEP);
+}
+
+function beginRhythmSequence(round) {
+  const gs = state.gameState;
+  const rh = gs.rhythm;
+  if (!rh) return;
+  rh.phase = 'play';
+  rh.round = round;
+  rh.seq = Array.from({ length: rhythmSeqLength(round) }, () => RHYTHM_DIRS[Math.floor(Math.random() * RHYTHM_DIRS.length)]);
+  rh.idx = 0;
+  rh.arrowTimer = rhythmWindow(round);
+  rh.timer = 0;
+  rh.victimId = null;
+  rh.crusherY = null;
+}
+
 function selectMapFromPool(pool) {
-  const keyed = pool.map((map, index) => ({ map, key: map.custom ? map.customId : 'native:' + index }));
+  const keyed = pool.map((map, index) => ({ map, key: playableMapKey(map, index) }));
   const selection = state.currentRoom && state.currentRoom.mapSelection;
   let candidates = keyed;
   if (Array.isArray(selection) && selection.length > 0) {
@@ -80,6 +117,7 @@ function selectMapFromPool(pool) {
 export function initGame() {
   const eggMode = isEggMode();
   const runMode = isRunMode();
+  const rhythmMode = isRhythmMode();
   const chosenMap = selectMapFromPool(getPlayableMaps(gameMode()));
   const spawns = Array.isArray(chosenMap.spawns) ? chosenMap.spawns : [];
   const players = state.currentRoom.players.map((player, index) => {
@@ -107,6 +145,7 @@ export function initGame() {
       isMonster: false,
       lives: RUN_LIVES,
       hurtCooldown: 0,
+      rhythmScore: 0,
       hat: player.hat,
       cosmetics: player.cosmetics || [],
       controls: controlSets[index] || controlSets[0]
@@ -114,13 +153,15 @@ export function initGame() {
   });
   let firstHolder;
   let monsterIndex = -1;
-  if (runMode) {
-    let candidates = players;
-    if (state.lastMonsterId) {
-      const filtered = players.filter(p => p.id !== state.lastMonsterId);
-      if (filtered.length > 0) candidates = filtered;
+  if (runMode || rhythmMode) {
+    if (runMode) {
+      let candidates = players;
+      if (state.lastMonsterId) {
+        const filtered = players.filter(p => p.id !== state.lastMonsterId);
+        if (filtered.length > 0) candidates = filtered;
+      }
+      monsterIndex = players.indexOf(candidates[Math.floor(Math.random() * candidates.length)]);
     }
-    monsterIndex = players.indexOf(candidates[Math.floor(Math.random() * candidates.length)]);
     firstHolder = -1;
   } else if (state.lastBombHolder && !eggMode) {
     const candidates = players.filter(p => p.id !== state.lastBombHolder);
@@ -135,11 +176,12 @@ export function initGame() {
     players[monsterIndex].lives = 0;
   } else if (eggMode) {
     players[firstHolder].hasEgg = true;
-  } else {
+  } else if (!rhythmMode) {
     players[firstHolder].hasBomb = true;
     players[firstHolder].lastPasser = players[firstHolder].id;
   }
   lastTrailPoints.clear();
+  lastRhythmKeys.clear();
   state.gameState = {
     mode: gameMode(),
     players,
@@ -151,10 +193,14 @@ export function initGame() {
       platformColors: chosenMap.platformColors || ['#a3d97a', '#7fd3f2', '#f6c768', '#f2a1a1'],
       music: chosenMap.music || null
     },
-    bombOwnerId: runMode ? null : players[firstHolder].id,
+    bombOwnerId: runMode || rhythmMode ? null : players[firstHolder].id,
     eggOwnerId: eggMode ? players[firstHolder].id : null,
     monsterId: runMode ? players[monsterIndex].id : null,
     hitCount: 0,
+    musicPaused: false,
+    rhythm: rhythmMode
+      ? { phase: 'play', round: 1, seq: [], idx: 0, arrowTimer: 0, timer: 0, victimId: null, crusherY: null }
+      : null,
     bombTime: runMode ? RUN_ROUND_TIME : eggMode ? EGG_ROUND_TIME : MAX_BOMB_TIME,
     timerMax: runMode ? RUN_ROUND_TIME : eggMode ? EGG_ROUND_TIME : MAX_BOMB_TIME,
     deathOrder: [],
@@ -165,13 +211,18 @@ export function initGame() {
       ? `${players[monsterIndex].nickname} é o monstro! Corram!`
       : eggMode
         ? 'Pegue o ovo! Quem tiver menos pontos quando o tempo zerar explode.'
-        : 'A partida começou! Passe a bomba para alguém antes que ela exploda.',
+        : rhythmMode
+          ? 'Aperte as setas na ordem! Quem tiver menos pontos no fim da sequência será amassado.'
+          : 'A partida começou! Passe a bomba para alguém antes que ela exploda.',
     rev: 0,
     t: Date.now(),
     roundResult: null,
     lastTime: null,
     particles: []
   };
+  if (rhythmMode) {
+    beginRhythmSequence(1);
+  }
 }
 
 export function stepGame(dt) {
@@ -201,6 +252,9 @@ export function stepGame(dt) {
       finishRunRound(true);
     }
   }
+  if (gs.mode === 'rhythm' && gs.running && gs.roundOverTimer == null) {
+    stepRhythm(dt);
+  }
 }
 
 function updatePlayers(dt) {
@@ -209,10 +263,17 @@ function updatePlayers(dt) {
   gs.players.forEach(player => {
     if (!player.alive) return;
     const keys = getPlayerKeys(player);
-    const left = keys.left;
-    const right = keys.right;
-    const jump = keys.jump;
-    const dash = keys.dash;
+    let left = keys.left;
+    let right = keys.right;
+    let jump = keys.jump;
+    let dash = keys.dash;
+    if (gs.mode === 'rhythm') {
+      handleRhythmInput(player, keys);
+      left = false;
+      right = false;
+      jump = false;
+      dash = false;
+    }
 
     if (player.dashCooldown > 0) {
       player.dashCooldown = Math.max(0, player.dashCooldown - dt);
@@ -321,7 +382,7 @@ function updatePlayers(dt) {
     }
   });
 
-  if (gs.mode === 'run') return;
+  if (gs.mode === 'run' || gs.mode === 'rhythm') return;
   const itemFlag = gs.mode === 'egg' ? 'hasEgg' : 'hasBomb';
   const holder = gs.players.find(player => player[itemFlag] && player.alive);
   if (gs.roundOverTimer == null && !holder) {
@@ -344,6 +405,9 @@ function collidePlayers() {
   const gs = state.gameState;
   if (gs.mode === 'run') {
     monsterHits();
+    return;
+  }
+  if (gs.mode === 'rhythm') {
     return;
   }
   const itemFlag = gs.mode === 'egg' ? 'hasEgg' : 'hasBomb';
@@ -384,6 +448,137 @@ function transferBomb(holder, target) {
   gs.bombOwnerId = target.id;
   target.lastPasser = holder.id;
   playPop();
+}
+
+function handleRhythmInput(player, keys) {
+  const gs = state.gameState;
+  const rh = gs.rhythm;
+  const rd = keys.rhythm || {};
+  const snapshot = { left: !!rd.left, right: !!rd.right, up: !!rd.up, down: !!rd.down };
+  const prev = lastRhythmKeys.get(player.id) || {};
+  lastRhythmKeys.set(player.id, snapshot);
+  if (!rh || rh.phase !== 'play' || !player.alive) return;
+  const target = rh.seq[rh.idx];
+  if (target === undefined) return;
+  const pressed = dir => snapshot[dir] && !prev[dir];
+  if (pressed(target)) {
+    player.rhythmScore = (player.rhythmScore || 0) + 1;
+    advanceRhythmArrow(rh);
+    return;
+  }
+  for (const dir of ['left', 'right', 'up', 'down']) {
+    if (dir !== target && pressed(dir)) {
+      player.rhythmScore = (player.rhythmScore || 0) - 1;
+      break;
+    }
+  }
+}
+
+function advanceRhythmArrow(rh) {
+  rh.idx += 1;
+  rh.arrowTimer = rhythmWindow(rh.round);
+  if (rh.idx >= rh.seq.length) judgeRhythmSequence();
+}
+
+function rhythmTimeout() {
+  const gs = state.gameState;
+  gs.players.forEach(player => {
+    if (player.alive) player.rhythmScore = (player.rhythmScore || 0) - 1;
+  });
+  advanceRhythmArrow(gs.rhythm);
+}
+
+function judgeRhythmSequence() {
+  const gs = state.gameState;
+  const rh = gs.rhythm;
+  const alive = gs.players.filter(player => player.alive);
+  if (alive.length <= 1) {
+    finishRhythmRound();
+    return;
+  }
+  const minScore = Math.min(...alive.map(player => player.rhythmScore || 0));
+  const tied = alive.filter(player => (player.rhythmScore || 0) === minScore);
+  const victim = tied[Math.floor(Math.random() * tied.length)];
+  const platform = gs.platforms.find(pl =>
+    victim.onGround &&
+    Math.abs(pl.y - victim.y) < 4 &&
+    victim.x >= pl.x - 4 &&
+    victim.x <= pl.x + pl.width + 4);
+  if (platform) platform.red = true;
+  rh.phase = 'warn';
+  rh.timer = RHYTHM_WARN_TIME;
+  rh.victimId = victim.id;
+  gs.musicPaused = true;
+  gs.message = `${victim.nickname} teve o menor ritmo!`;
+}
+
+function stepRhythm(dt) {
+  const gs = state.gameState;
+  const rh = gs.rhythm;
+  if (!rh) return;
+  if (rh.phase === 'play') {
+    rh.arrowTimer -= dt;
+    if (rh.arrowTimer <= 0) rhythmTimeout();
+  } else if (rh.phase === 'warn') {
+    rh.timer -= dt;
+    if (rh.timer <= 0) {
+      rh.phase = 'slam';
+      rh.crusherY = -180;
+    }
+  } else if (rh.phase === 'slam') {
+    const victim = gs.players.find(player => player.id === rh.victimId);
+    const targetY = victim ? victim.y : FLOOR_Y;
+    rh.crusherY += RHYTHM_SLAM_SPEED * dt;
+    if (victim && rh.crusherY >= targetY) {
+      victim.alive = false;
+      victim.hasBomb = false;
+      victim.hasEgg = false;
+      gs.deathOrder.push(victim.id);
+      gs.explosionCount = (gs.explosionCount || 0) + 1;
+      spawnExplosion(victim);
+      const remaining = gs.players.filter(player => player.alive);
+      if (remaining.length <= 1) {
+        finishRhythmRound();
+        return;
+      }
+      rh.phase = 'rise';
+    }
+  } else if (rh.phase === 'rise') {
+    rh.crusherY -= RHYTHM_RISE_SPEED * dt;
+    if (rh.crusherY <= -240) {
+      rh.phase = 'wait';
+      rh.timer = RHYTHM_NEXT_DELAY;
+    }
+  } else if (rh.phase === 'wait') {
+    rh.timer -= dt;
+    if (rh.timer <= 0) {
+      beginRhythmSequence(rh.round + 1);
+      gs.musicPaused = false;
+      gs.message = `Rodada ${gs.rhythm.round}! ${gs.rhythm.seq.length} setas — fiquem ligados!`;
+    }
+  }
+}
+
+function finishRhythmRound() {
+  const gs = state.gameState;
+  if (gs.roundOverTimer != null) return;
+  const survivor = gs.players.find(player => player.alive) || null;
+  const byId = new Map(gs.players.map(player => [player.id, player]));
+  const firstDead = byId.get(gs.deathOrder[0]) || null;
+  gs.pendingResult = {
+    title: 'Fim da rodada!',
+    text: survivor
+      ? `<strong>${survivor.nickname}</strong> sobreviveu ao ritmo!<br>Primeiro amassado: <strong>${firstDead ? firstDead.nickname : 'Ninguém'}</strong>`
+      : 'Todos foram amassados!',
+    winnerId: survivor ? survivor.id : null,
+    winnerName: survivor ? survivor.nickname : 'Ninguém',
+    loserId: firstDead ? firstDead.id : null,
+    loserName: firstDead ? firstDead.nickname : null,
+    deathOrder: [...gs.deathOrder]
+  };
+  gs.message = `${survivor ? survivor.nickname + ' venceu no ritmo!' : 'Todos foram amassados!'}`;
+  gs.roundOverTimer = DEATH_ANIM_TIME;
+  gs.musicPaused = false;
 }
 
 function monsterHits() {

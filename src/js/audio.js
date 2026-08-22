@@ -116,6 +116,14 @@ export function playGameMusic(map, mode) {
   if (gameAudio.paused) startMusic(gameAudio);
 }
 
+export function pauseGameMusic() {
+  if (gameAudio && !gameAudio.paused) gameAudio.pause();
+}
+
+export function resumeGameMusic() {
+  if (gameAudio && gameAudio.paused && !menuAudio) startMusic(gameAudio);
+}
+
 export function setMusicVolume(volume) {
   const v = volume / 100;
   if (menuAudio) menuAudio.volume = v;

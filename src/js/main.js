@@ -54,7 +54,7 @@ function showRoundResult(result) {
 
 function playDeathSoundIfNew(st) {
   if (!st) return;
-  if (st.mode === 'egg' || st.mode === 'run') {
+  if (st.mode === 'egg' || st.mode === 'run' || st.mode === 'rhythm') {
     const count = st.explosionCount || 0;
     if (state.lastExplosionCount == null) {
       state.lastExplosionCount = count;
@@ -168,11 +168,19 @@ function publishHeartbeat() {
   }
 }
 
+function syncMusicPause(st) {
+  const paused = !!(st && st.musicPaused);
+  if (state.musicPausedApplied === paused) return;
+  state.musicPausedApplied = paused;
+  if (paused) audio.pauseGameMusic(); else audio.resumeGameMusic();
+}
+
 function gameLoop(time) {
   if (!state.gameState || !state.gameState.running) return;
 
   const shared = storage.readGameState();
   playDeathSoundIfNew(shared);
+  syncMusicPause(shared);
   if (shared && shared.roundResult) {
     if (!state.endShown) {
       state.gameState = shared;
@@ -228,6 +236,7 @@ function clientRenderLoop() {
   const st = storage.readGameState();
   const now = Date.now();
   playDeathSoundIfNew(st);
+  syncMusicPause(st);
   if (st && st.roundResult) {
     if (!state.endShown) {
       state.gameState = st;
@@ -294,6 +303,7 @@ function enterGameScreen() {
   state.deathSoundPlayed = false;
   state.lastExplosionCount = null;
   state.lastRunHitCount = null;
+  state.musicPausedApplied = false;
   state.lastSeenRev = -1;
   state.accTime = 0;
   state.lastFrameTime = 0;
@@ -670,7 +680,7 @@ setInterval(() => {
 }, 33);
 
 const uiPadState = new Map();
-let lastPadPressed = new Map();
+let padSuppress = new Set();
 const UI_MOVE_REPEAT_DELAY = 240;
 
 function applyUiMove(dir, playerId, isAnalog) {
@@ -682,6 +692,19 @@ function applyUiMove(dir, playerId, isAnalog) {
 
 function padPressedAny(pad) {
   return (pad.buttons || []).some(btn => btn && btn.pressed);
+}
+
+function padButtonSnapshot(pad) {
+  const axis0 = pad.axes[0] || 0;
+  const axis1 = pad.axes[1] || 0;
+  return {
+    up: !!(pad.buttons[12] && pad.buttons[12].pressed) || axis1 < -0.5,
+    down: !!(pad.buttons[13] && pad.buttons[13].pressed) || axis1 > 0.5,
+    left: !!(pad.buttons[14] && pad.buttons[14].pressed) || axis0 < -0.5,
+    right: !!(pad.buttons[15] && pad.buttons[15].pressed) || axis0 > 0.5,
+    a: !!(pad.buttons[0] && pad.buttons[0].pressed),
+    b: !!(pad.buttons[1] && pad.buttons[1].pressed)
+  };
 }
 
 function getUiPads() {
@@ -706,7 +729,7 @@ function getUiPads() {
     state.uiPadPlayerId = id;
   }
   const room = state.currentRoom;
-  if (room && room.mode === 'local' && getPadConnectIndex() >= 0) {
+  if (room && getPadConnectIndex() >= 0) {
     const pad = pads.find(p => p.index === getPadConnectIndex());
     if (pad && !handled.has(pad.index)) {
       handled.add(pad.index);
@@ -716,20 +739,71 @@ function getUiPads() {
   return result;
 }
 
+let lastConnectIndexSeen = -1;
+
+function padAssignedPlayer(index) {
+  const room = state.currentRoom;
+  if (!room) return null;
+  return room.players.find(player => storage.getGamepadAssignment(player.id) === index) || null;
+}
+
+const PAD_CONNECT_DEBUG = true;
+const padDebugLoggedAt = new Map();
+
+function debugPadConnect(reason, detail) {
+  if (!PAD_CONNECT_DEBUG) return;
+  const now = performance.now();
+  if (now - (padDebugLoggedAt.get(reason) || -Infinity) < 1000) return;
+  padDebugLoggedAt.set(reason, now);
+  console.info(`[pad-connect] ${reason}`, detail || '');
+}
+
 function checkLocalPadConnect() {
   const room = state.currentRoom;
-  if (!room || room.mode !== 'local') return;
-  if (state.currentScreen !== 'lobby') return;
-  if (getPadConnectIndex() >= 0) return;
+  if (!room) return;
   const pads = input.connectedGamepads();
+  const connectedIndexes = new Set(pads.map(pad => pad.index));
+  for (const index of [...padSuppress]) {
+    if (!connectedIndexes.has(index)) padSuppress.delete(index);
+  }
   for (const pad of pads) {
-    const pressed = padPressedAny(pad);
-    const prev = lastPadPressed.get(pad.index) || false;
-    lastPadPressed.set(pad.index, pressed);
-    if (!pressed || prev) continue;
-    const assignedTo = room.players.find(player => storage.getGamepadAssignment(player.id) === pad.index);
-    if (assignedTo) continue;
+    if (!padPressedAny(pad)) padSuppress.delete(pad.index);
+  }
+  const connectIndex = getPadConnectIndex();
+  if (lastConnectIndexSeen >= 0 && connectIndex < 0) padSuppress.add(lastConnectIndexSeen);
+  lastConnectIndexSeen = connectIndex;
+  if (connectIndex >= 0) {
+    debugPadConnect('aguardando: tela de atribuição já aberta', { pad: connectIndex });
+    return;
+  }
+  if (state.currentScreen === 'game' || state.endShown) {
+    debugPadConnect('aguardando: em partida ou tela de resultados');
+    return;
+  }
+  if (room.started) {
+    debugPadConnect('aguardando: partida iniciada (contagem/espera)');
+    return;
+  }
+  if (document.querySelector('.modal:not(.hidden)')) {
+    debugPadConnect('aguardando: outro modal aberto');
+    return;
+  }
+  for (const pad of pads) {
+    if (!padPressedAny(pad)) continue;
+    if (padAssignedPlayer(pad.index)) continue;
+    if (padSuppress.has(pad.index)) {
+      debugPadConnect('bloqueado até soltar todos os botões', { pad: pad.index });
+      continue;
+    }
+    debugPadConnect('abrindo tela de atribuição', { pad: pad.index });
     showPadConnect(pad.index);
+    const st = padUiState(pad);
+    st.prev = padButtonSnapshot(pad);
+    st.pending.a = false;
+    st.pending.b = false;
+    st.dir = null;
+    st.accum = 0;
+    st.locked = true;
     return;
   }
 }
@@ -742,7 +816,8 @@ function padUiState(pad) {
       pending: { up: false, down: false, left: false, right: false, a: false, b: false },
       options: false,
       dir: null,
-      accum: 0
+      accum: 0,
+      locked: false
     };
     uiPadState.set(pad.index, st);
   }
@@ -784,16 +859,15 @@ function pollUiGamepad() {
 
   for (const { pad, playerId } of navPads) {
     const st = padUiState(pad);
+    if (st.locked) {
+      const snap = padButtonSnapshot(pad);
+      st.prev = snap;
+      if (!snap.up && !snap.down && !snap.left && !snap.right && !snap.a && !snap.b) st.locked = false;
+      continue;
+    }
     const axis0 = pad.axes[0] || 0;
     const axis1 = pad.axes[1] || 0;
-    const now = {
-      up: !!(pad.buttons[12] && pad.buttons[12].pressed) || axis1 < -0.5,
-      down: !!(pad.buttons[13] && pad.buttons[13].pressed) || axis1 > 0.5,
-      left: !!(pad.buttons[14] && pad.buttons[14].pressed) || axis0 < -0.5,
-      right: !!(pad.buttons[15] && pad.buttons[15].pressed) || axis0 > 0.5,
-      a: !!(pad.buttons[0] && pad.buttons[0].pressed),
-      b: !!(pad.buttons[1] && pad.buttons[1].pressed)
-    };
+    const now = padButtonSnapshot(pad);
     const prev = st.prev;
     st.prev = now;
     const optionsPressed = !!(pad.buttons[9] && pad.buttons[9].pressed);

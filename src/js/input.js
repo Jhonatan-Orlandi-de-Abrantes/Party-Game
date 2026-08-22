@@ -41,6 +41,43 @@ function readGamepad(index) {
   }
 }
 
+function readGamepadDirs(index) {
+  if (index < 0 || typeof navigator === 'undefined' || !navigator.getGamepads) return null;
+  try {
+    const gp = navigator.getGamepads()[index];
+    if (!gp) return null;
+    const btn = i => !!(gp.buttons[i] && gp.buttons[i].pressed);
+    const ax = gp.axes || [];
+    return {
+      left: ax[0] < -AXIS_DEADZONE || btn(14),
+      right: ax[0] > AXIS_DEADZONE || btn(15),
+      up: ax[1] < -AXIS_DEADZONE || btn(12),
+      down: ax[1] > AXIS_DEADZONE || btn(13)
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
+export function readRhythmDirs(includeKeyboard, playerId) {
+  const dirs = { left: false, right: false, up: false, down: false };
+  if (includeKeyboard) {
+    const k = state.keysPressed;
+    dirs.left = !!(k['arrowleft'] || k['a']);
+    dirs.right = !!(k['arrowright'] || k['d']);
+    dirs.up = !!(k['arrowup'] || k['w']);
+    dirs.down = !!(k['arrowdown'] || k['s']);
+  }
+  const gd = readGamepadDirs(getGamepadAssignment(playerId));
+  if (gd) {
+    dirs.left = dirs.left || gd.left;
+    dirs.right = dirs.right || gd.right;
+    dirs.up = dirs.up || gd.up;
+    dirs.down = dirs.down || gd.down;
+  }
+  return dirs;
+}
+
 export function connectedGamepads() {
   if (typeof navigator === 'undefined' || !navigator.getGamepads) return [];
   try {
@@ -62,11 +99,12 @@ export function publishPlayerInput(playerId, includeKeyboard) {
   if (!state.myRoomCode || !playerId) return;
   const ctrl = getEffectiveControls(playerId);
   if (!ctrl) return;
+  const keyDown = name => includeKeyboard && !!state.keysPressed[String(name).toLowerCase()];
   const keys = {
-    left: includeKeyboard && !!state.keysPressed[ctrl.left.toLowerCase()],
-    right: includeKeyboard && !!state.keysPressed[ctrl.right.toLowerCase()],
-    jump: includeKeyboard && !!state.keysPressed[ctrl.jump.toLowerCase()],
-    dash: includeKeyboard && !!state.keysPressed[ctrl.dash.toLowerCase()]
+    left: keyDown(ctrl.left),
+    right: keyDown(ctrl.right),
+    jump: keyDown(ctrl.jump),
+    dash: keyDown(ctrl.dash)
   };
   const gp = readGamepad(getGamepadAssignment(playerId));
   if (gp) {
@@ -81,6 +119,7 @@ export function publishPlayerInput(playerId, includeKeyboard) {
     keys.jump = keys.jump || touchKeys.jump;
     keys.dash = keys.dash || touchKeys.dash;
   }
+  keys.rhythm = readRhythmDirs(includeKeyboard, playerId);
   const data = JSON.stringify({ roomCode: state.myRoomCode, playerId, keys, t: Date.now() });
   if (lastPublishedByPlayer.get(playerId) === data) return;
   lastPublishedByPlayer.set(playerId, data);

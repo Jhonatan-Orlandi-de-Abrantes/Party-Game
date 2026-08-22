@@ -1,5 +1,6 @@
 import { loadCustomMaps } from './storage.js';
 import { GAME_MODES } from './constants.js';
+import { RHYTHM_MAP } from './rhythmMap.js';
 
 export const MAPS = [
   {
@@ -72,6 +73,12 @@ export const MAPS = [
 
 const SUPPORTED_MODES = new Set(GAME_MODES.map(mode => mode.id));
 
+export function mapModes(entry) {
+  const raw = Array.isArray(entry && entry.mode) ? entry.mode : [(entry && entry.mode) || 'bomb'];
+  const modes = [...new Set(raw.filter(m => typeof m === 'string' && SUPPORTED_MODES.has(m)))];
+  return modes;
+}
+
 function customToPlayable(entry) {
   return {
     name: entry.name || 'Mapa customizado',
@@ -85,16 +92,27 @@ function customToPlayable(entry) {
   };
 }
 
+export function playableMapKey(map, index) {
+  if (map.custom) return map.customId;
+  if (map.nativeRhythm) return 'native:rhythm';
+  return 'native:' + index;
+}
+
 export function getPlayableMaps(requestedMode) {
   const accepts = entry => {
-    const mode = entry.mode || 'bomb';
-    if (!requestedMode || requestedMode === mode) return true;
+    const modes = mapModes(entry);
+    if (!requestedMode || modes.includes(requestedMode)) return true;
     // "Pegue o Ovo" e "CORRA!" usam os mesmos mapas do bomb clássico
-    return (requestedMode === 'egg' || requestedMode === 'run') && mode === 'bomb';
+    if ((requestedMode === 'egg' || requestedMode === 'run') && modes.includes('bomb')) return true;
+    return false;
   };
   const customs = loadCustomMaps()
-    .filter(entry => SUPPORTED_MODES.has(entry.mode || 'bomb'))
+    .filter(entry => mapModes(entry).length > 0)
     .filter(accepts)
     .map(customToPlayable);
+  // "Ritmo": apenas o mapa próprio (rhythmMap.js) + customizados
+  if (requestedMode === 'rhythm') {
+    return [RHYTHM_MAP].concat(customs);
+  }
   return MAPS.concat(customs);
 }

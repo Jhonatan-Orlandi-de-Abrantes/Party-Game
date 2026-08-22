@@ -41,7 +41,6 @@
           Party
         </span><span class="title-word">Game</span>
       </h1>
-      <div class="game-mode" id="gameMode">Bomb Clássico</div>
     </header>
 
     <section id="screen-welcome" class="card screen hidden">
@@ -87,7 +86,7 @@
           <button id="mapEditorBackBtn" class="invite">← Voltar</button>
           <div class="map-editor-topbar-actions">
             <input id="mapNameInput" placeholder="Nome do mapa" maxlength="24" autocomplete="off" />
-            <select id="mapModeSelect" title="Modo de jogo do arquivo"></select>
+            <div id="mapModeChips" class="map-mode-chips" title="Modos de jogo do arquivo (clique para ativar/desativar)"></div>
             <button id="mapNewBtn" class="secondary">Novo</button>
             <button id="mapSaveBtn">Salvar</button>
             <button id="mapExportBtn" class="btn-green">Exportar</button>
@@ -100,7 +99,11 @@
       <div class="map-editor-main">
         <div class="map-editor-canvas-wrap">
           <canvas id="mapEditorCanvas" width="1080" height="540"></canvas>
-          <p class="setting-hint">Ferramenta "Adicionar": arraste para criar uma plataforma. Ferramenta "Selecionar": arraste para mover, use as alças dos cantos para redimensionar. Delete remove a plataforma selecionada. Ferramenta "Spawns": clique para marcar onde cada jogador nasce (P1–P4, um por jogador); arraste para mover e Delete remove o marcador selecionado.</p>
+          <p class="setting-hint">Ferramenta "Adicionar": arraste para criar uma plataforma. Ferramenta "Selecionar": arraste para mover, use as alças dos cantos para redimensionar — clique em um spawn para selecioná-lo também. Delete remove a plataforma ou spawn selecionado. Ferramenta "Spawns": clique para marcar onde cada jogador nasce (P1–P4, um por jogador); arraste para mover e Delete remove o marcador selecionado.</p>
+          <div id="mapPlatformListBox" class="map-platform-list-box">
+            <strong class="setting-title">Plataformas do mapa (<span id="mapPlatformCount">0</span>)</strong>
+            <ul id="mapPlatformList" class="map-platform-list"></ul>
+          </div>
         </div>
 
         <aside class="map-editor-sidebar">
@@ -242,7 +245,7 @@
               <div class="keys-grid">
                 <button type="button" class="key-btn" data-action="left">Esquerda: <span>A</span></button>
                 <button type="button" class="key-btn" data-action="right">Direita: <span>D</span></button>
-                <button type="button" class="key-btn" data-action="jump">Pular: <span>W</span></button>
+                <button type="button" class="key-btn" data-action="jump">Pular: <span>Espaço</span></button>
                 <button type="button" class="key-btn" data-action="dash">Dash: <span>Shift</span></button>
               </div>
               <button id="resetKeysBtn" class="secondary" style="margin-top:10px;">Resetar atalhos</button>
@@ -337,7 +340,7 @@
       <div class="hud-row">
         <div class="hud-panel">
           <strong>Controles</strong>
-          <div class="status-line" id="controlsInfo">Mover: A/D, Pular: W, Dash: Shift</div>
+          <div class="status-line" id="controlsInfo">Mover: A/D, Pular: Espaço, Dash: Shift</div>
           <div class="status-line" id="gamepadInfo">Gamepad: Mover: Analógico, Pular: A, Dash: RT/LT</div>
         </div>
       </div>
@@ -416,7 +419,7 @@
       <p class="setting-hint">Host: <span id="hostConfigHostName"></span></p>
 
       <div class="setting-group lobby-maps-group">
-        <strong class="setting-title">Mapas da partida</strong>
+        <strong class="setting-title">Mapas da partida: <span id="lobbyMapsModeName"></span></strong>
         <p class="setting-hint">Toque em um mapa para incluir ou retirar da partida. Sem seleção, todos entram.</p>
         <div class="lobby-maps-columns">
           <div class="lobby-maps-col">

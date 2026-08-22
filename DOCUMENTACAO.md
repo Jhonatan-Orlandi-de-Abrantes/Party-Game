@@ -172,6 +172,29 @@ continua contando. O último de pé vence e vê uma tela de vitória com coroa �
   bomb clássico e música própria (`musics/game-RUN/gmr1.mp3`). Placar:
   sobreviventes (por vidas restantes) > monstro > mortos em ordem inversa —
   quanto mais o monstro matou, mais pontos ele ganha e menos os outros.
+- **Modo 🎵 Ritmo (estilo FNF):** todos os jogadores nascem fixos nas posições
+  de spawn do mapa (movimento desativado) e recebem, acima da cabeça, uma
+  **sequência de setas grandes e grossas** (polígonos desenhados no canvas,
+  cada direção com cor própria: ↑ verde, ↓ ciano, ← roxo, → vermelho). A
+  sequência é **igual para todos os vivos ao mesmo tempo**. Cada jogador
+  aperta a direção da seta destacada: **teclado** aceita as **setas do teclado
+  ou WASD**, e **controle** usa o **analógico esquerdo ou o dpad** (não os
+  botões de ação). Essas direções são capturadas por `readRhythmDirs` (input.js)
+  e publicadas junto do input normal em `keys.rhythm`, então funcionam entre
+  abas. Acertar vale **+1** e avança; errar vale
+  **-1** (não avança); deixar o tempo da seta esgotar vale **-1 para todos os
+  vivos** e avança. Quando a sequência termina, quem tiver **menor pontuação**
+  acumulada (`rhythmScore`, empate = sorteio) entre os vivos é eliminado: o
+  **chão dele fica vermelho** (plataforma marcada com `red`), a **música pausa**
+  (`gs.musicPaused` → `pauseGameMusic()`), após **2s** uma **prensa** desce de
+  fora da tela e o **amassa** (explosão igual ao bomb + `deathOrder` +
+  `explosionCount`), depois sobe lentamente saindo da tela (a plataforma
+  permanece vermelha) e, **1s** depois, a música volta e a próxima sequência
+  começa — cada rodada é **mais difícil** (mais setas: `3+rodada`, máx 10;
+  janela por seta menor: `1.5s - 0.12s·(rodada-1)`, mín 0.45s). Repete até
+  sobrar **um único jogador**. Placar pela **ordem de morte** como no egg
+  (1º amassado = 1pt … último vivo = n pts). Aceita qualquer mapa custom
+  enquanto o mapa próprio dedicado não for definido pelo autor.
 - **Design responsivo:** breakpoint em 720px para adaptação em telas menores.
 
 ---
@@ -272,6 +295,11 @@ PartyGame/
   - `clientRenderLoop` → lê o estado publicado e redesenha o canvas.
 - **Limite de FPS** (`getFpsLimit`, 0 = sem limite): ambos os loops pulam frames
   com `requestAnimationFrame` até passar o intervalo de 1000/limite.
+- **`syncMusicPause(st)`:** nos dois loops compara `gs.musicPaused` (modo
+  Ritmo) com a flag local `state.musicPausedApplied` e chama
+  `audio.pauseGameMusic()`/`resumeGameMusic()` — pausa/retoma a música em
+  todas as abas quando alguém é condenado no ritmo; resetada em
+  `enterGameScreen`.
 - **Convergência de fim de rodada:** `gameLoop` e `becomeSimulator` checam o
   estado compartilhado; se outra aba já publicou `roundResult`, param a
   simulação e mostram o resultado. Isso evita que dois simuladores se
@@ -339,10 +367,10 @@ PartyGame/
   (`bombPartyCustomMapsV1`), `CUSTOM_MUSICS_KEY` (`bombPartyCustomMusicsV1`),
   `MAX_MAP_MUSIC_SIZE` (2,5MB), `MAX_MAP_PLATFORMS` (60),
   `MAP_EDITOR_WIDTH/HEIGHT` (1080×540) e `GAME_MODES` (lista de modos
-  suportados — `bomb` = "💣 Bomb Clássico", `egg` = "🥚 Pegue o Ovo" e
-  `run` = "🏃 CORRA!", cada um com a propriedade `color` usada pelo tema do
-  lobby; usada pelo seletor de modo do editor, para validar arquivos
-  importados e para renderizar os chips de modo do lobby).
+  suportados — `bomb` = "💣 Bomb Clássico", `egg` = "🥚 Pegue o Ovo",
+  `run` = "🏃 CORRA!" e `rhythm` = "🎵 Ritmo", cada um com a propriedade
+  `color` usada pelo tema do lobby; usada pelo seletor de modo do editor, para
+  validar arquivos importados e para renderizar os chips de modo do lobby).
 - **Constantes do modo Pegue o Ovo:** `EGG_IMAGE_PATH`
   (`src/Images/egg/egg.png`), `EGG_ROUND_TIME` (10s — ciclo de explosão),
   `EGG_SCORE_TICK` (0,2s por ponto) e `SPAWN_COLORS`/`MAX_SPAWNS` (paleta e
@@ -350,6 +378,14 @@ PartyGame/
 - **Constantes do modo CORRA!:** `RUN_ROUND_TIME` (12s de rodada),
   `RUN_LIVES` (2 corações por jogador) e `MONSTER_HIT_COOLDOWN` (1,2s de
   invulnerabilidade após ser tocado pelo monstro).
+- **Constantes do modo Ritmo:** `RHYTHM_BASE_LEN`/`RHYTHM_MAX_LEN`
+  (comprimento da sequência: `3+rodada`, máx 10), `RHYTHM_BASE_WINDOW`/
+  `RHYTHM_WINDOW_STEP`/`RHYTHM_MIN_WINDOW` (janela por seta: `1.5s - 0.12s·
+  (rodada-1)`, mín 0,45s), `RHYTHM_WARN_TIME` (2s de aviso antes da prensa),
+  `RHYTHM_SLAM_SPEED`/`RHYTHM_RISE_SPEED` (velocidades de descida/subida da
+  prensa), `RHYTHM_NEXT_DELAY` (1s entre a prensa sair e a próxima sequência)
+  e `RHYTHM_ARROW_COLORS` (cores por direção: ↑ verde, ↓ ciano, ← roxo,
+  → vermelho).
 - **`uuid()`:** gera id único com fallback — `crypto.randomUUID()` só existe em
   contexto seguro (HTTPS/localhost); em outros casos (ex.: acesso por IP da
   rede) usa `crypto.getRandomValues` ou timestamp+random. **Use sempre esta
@@ -478,7 +514,8 @@ PartyGame/
   passagem da bomba / roubo do ovo / perseguição do monstro, partículas. No
   modo egg decrementa o contador global (`gs.bombTime`, máx `EGG_ROUND_TIME`) e
   chama `explodeLowestScore()` ao zerar; no modo run decrementa o mesmo
-  contador (máx `RUN_ROUND_TIME`) e chama `finishRunRound(true)` ao zerar.
+  contador (máx `RUN_ROUND_TIME`) e chama `finishRunRound(true)` ao zerar; no
+  modo rhythm chama `stepRhythm(dt)`.
 - **Regras da bomba:** ao ser passada, o timer **não reseta e não ganha +2s** —
   apenas continua de onde estava (`target.bombTime = gs.bombTime`). Há um
   `passCooldown` de 0.6s no alvo para a troca ficar visível (senão a
@@ -500,6 +537,22 @@ PartyGame/
   partículas). A rodada acaba quando não sobrar corredor ou o tempo zera —
   `finishRunRound` monta `result.ranking` (sobreviventes por vidas > monstro >
   mortos em ordem inversa).
+- **Regras do Ritmo (`stepRhythm`/`judgeRhythmSequence`):** `initGame` cria
+  `gs.rhythm = { phase, round, seq, idx, arrowTimer, timer, victimId,
+  crusherY }` e começa na fase `play`. O movimento dos jogadores fica
+  desativado (`updatePlayers` zera left/right/jump/dash) e cada pressão de
+  tecla passa por `handleRhythmInput`, que compara o **snapshot atual com o
+  anterior** (mapa `lastRhythmKeys`) para detectar "apertou agora" — acerto no
+  alvo: +1 e avança; apertar outra ação: -1 sem avançar. `stepRhythm` controla
+  as fases: **play** (decrementa `arrowTimer`; ao zerar, `rhythmTimeout` tira
+  1 ponto de todos os vivos e avança), **warn** (vítima escolhida por menor
+  `rhythmScore` — empate sorteado; plataforma sob ela marcada `red`,
+  `gs.musicPaused=true`, 2s), **slam** (prensa desce a
+  `RHYTHM_SLAM_SPEED`; ao alcançar a vítima: explosão + `deathOrder` +
+  `explosionCount` + `playPop`; se sobrou só 1 → `finishRhythmRound`),
+  **rise** (prensa sobe lentamente; plataforma continua vermelha),
+  **wait** (1s) → nova sequência mais difícil e música retomada.
+  `finishRhythmRound` monta `pendingResult.deathOrder` (placar igual ao egg).
 - `endRound()`: explodiu → marca `running=false`, define o **resultado** com
   `winnerId`, `loserId`, `loserName`, grava `gs.roundResult`, publica o estado
   (para os clientes verem o fim da rodada) e chama `onRoundEnd`.
@@ -554,6 +607,21 @@ PartyGame/
 - `drawTrails()`: desenha o **vento** do pé dos personagens — **quadrados**
 sólidos na cor do personagem (sem borda, sem elipse), alpha máximo 0.35, sobem
 levemente e somem após `TRAIL_LIFE`.
+- **Modo Ritmo:** plataformas marcadas com `red` são pintadas de vermelho
+  (`#c92a2a`) — marca permanente do chão de quem foi amassado.
+  `drawRhythmArrows()` desenha, acima de cada jogador vivo, a sequência como
+  **setas grandes e grossas** (polígonos com contorno escuro em
+  `drawThickArrow`, rotacionadas por direção) nas cores de
+  `RHYTHM_ARROW_COLORS`; setas já resolvidas ficam esmaecidas e a seta atual
+  **pulsa**; acima delas fica o placar `N pts` grande na cor do player.
+  Tamanhos ajustáveis no topo da seção do Ritmo em render.js:
+  `RHYTHM_ARROW_SIZE`, `RHYTHM_PLAYER_SCALE` (players maiores só neste modo,
+  via transform no `drawPlayer`) e `RHYTHM_CRUSHER_WIDTH`. `drawBombTimer()`
+  no modo Ritmo mostra o **tempo restante para pressionar a seta atual**
+  (`rh.arrowTimer` sobre a janela da rodada) com barra de progresso e as
+  mesmas cores de urgência. `drawRhythmCrusher()`
+  desenha a **prensa** (bloco de metal com faixa inferior escura e brilho
+  lateral) descendo de fora da tela até amassar a vítima e subindo de volta.
 
 ### `src/js/hats.js`
 - `HATS`: catálogo com `id` e `name` (primeira opção é `none` = **Vazio**).
@@ -783,6 +851,40 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
   tela (atribuir o pad a um deles via `assignPadToPlayer`) ou cria um novo
   jogador (`padCreateBtn` → nome → `handlePadCreate`, que chama
   `rooms.addLocalPlayer` e atribui o pad ao novo player).
+  - **Detecção automática** (`checkLocalPadConnect` no main.js, via
+    `pollUiGamepad` a cada 50ms): com **qualquer sala aberta** (independente de
+    `room.mode` — o mesmo campo guarda o modo de jogo escolhido nos chips),
+    fora de partida iniciada (`room.started`, contagem/espera), fora da tela de
+    jogo/resultados (`currentScreen !== 'game'` e `!endShown`), sem nenhum outro
+    modal aberto e com o `padModal` fechado, qualquer botão pressionado num
+    controle **não atribuído a nenhum jogador da sala** abre o modal.
+    "Atribuído" = existe um player na sala cuja `getGamepadAssignment` aponta
+    para o índice do pad — fonte única de verdade (grava apenas a tela de
+    atribuição e o dropdown do jogador; trocas mútuas gravam ambos os pads;
+    voltar para "Teclado" libera o pad). Assim, cancelar a tela ou trocar de
+    sala faz o controle **perguntar novamente** no próximo uso. Ao abrir, o pad
+    entra em `locked` (estado por-pad em `padUiState`): entradas só contam
+    depois de **soltar todos os botões** uma vez (evita confirmação fantasma
+    pelo mesmo aperto que abriu a tela). Após fechar/cancelar, o índice vai para
+    `padSuppress` até o pad ficar ocioso **ou reconectar** (evita reabrir com o
+    botão ainda pressionado). Logs de diagnóstico `[pad-connect] ...` no console
+    registram cada decisão/bloqueio (throttle 1s; desligar via
+    `PAD_CONNECT_DEBUG = false` no main.js).
+  - **Causa raiz do antigo bug ("mouse antes do controle" matava a detecção /
+    controle conectava sozinho):** a detecção exigia `room.mode === 'local'`,
+    mas esse campo é o **mesmo** usado pelos chips de modo de jogo do lobby
+    (`renderLobbyModes` grava `'bomb'/'egg'/'run'/'rhythm'` no mesmo campo) —
+    qualquer clique num chip (ação comum de mouse) fazia o gate falhar
+    **silenciosamente** e a tela de atribuição parava de abrir pelo resto da
+    sessão da sala; somado a isso, o `Set` de sessão `confirmedPads` marcava
+    pads como "confirmados" por caminhos fora da tela de atribuição e nunca
+    resetava ao trocar de sala (sensação de "já conectado / não pergunta de
+    novo"). Correção: gate por `room.mode` removido e
+    `confirmedPads` substituído pela checagem direta de atribuição na sala
+    (`padAssignedPlayer`). Os dropdowns do lobby listam todos os pads conectados
+    (para escolha manual/troca) com rótulo **"livre"** ou **"em uso por
+    {nome}"**, deixando claro que aparecer na lista ≠ estar atribuído.
+    `showScreen` fecha o `padModal` ao sair do lobby (sem modal órfão).
 - **Modal de convite (`inviteModal`):** `openInviteModal()` / `closeInviteModal()`
   — monta o link `?room=CÓDIGO` e copia para o clipboard.
 - **Configuração por jogador:** `getSettingsPlayer()` resolve quem está sendo
@@ -821,12 +923,14 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
      "Somente o host pode alterar as regras do jogo!" (`showLobbyAlert`) e não
      abre o painel.
    - `renderLobbyMaps()` e `renderLobbyRules()` preenchem o modal
-     **`#hostConfigPanel`** ("Mapas & Regras da partida"), que **não fica na
+     **`#hostConfigPanel`** ("Regras do Jogo"), que **não fica na
      tela do lobby** — abre/fecha pelo botão **"Regras do Jogo"** do host, pelo
      ✕, pelo fundo, por
-     Escape ou pelo botão B do controle. Mapas: grade com pré-visualização
-     (mini-canvas desenhado por `drawMapPreview`) separada em **nativos** e
-      **meus mapas** (cada grupo com borda própria); o host clica para
+     Escape ou pelo botão B do controle. O cabeçalho traz o subtítulo
+     **"Host: \<nome do host\>"** (nome colorido com a cor do host, preenchido
+     por `updateHostConfigHint`). Mapas: grade com pré-visualização
+     (mini-canvas desenhado por `drawMapPreview`) separada em **Mapas** e
+      **Meus mapas** (cada grupo com borda própria); o host clica para
       incluir/retirar da partida — os cards exibem os rótulos
       **"✓ Incluído"** / **"Não incluído"**
       (`room.mapSelection`; sem seleção = todos). Regras: sliders de
@@ -861,6 +965,9 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
   (música personalizada do editor de mapas) e, sem configuração/falha, sorteia
   uma faixa aleatória. Só troca o áudio quando a fonte muda (comparação de
   `src`). `getNativeGameTracks()` expõe a lista para o editor.
+- **`pauseGameMusic()`/`resumeGameMusic()`:** pausam/retomam a música da
+  partida sem rebobinar — usados pelo modo Ritmo via `gs.musicPaused`
+  (sincronizado entre abas por `syncMusicPause`, em main.js).
 - Efeitos: `playClick` (botões, via WebAudio), `playPop`, `playSfxFile(src)`
   (toca um arquivo específico — usado pelo golpe do monstro no modo run) e
   `playSound(nome)`
@@ -889,8 +996,10 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
   Arena.
 - `getPlayableMaps(requestedMode)`: devolve os nativos + os **mapas
   customizados** salvos no `localStorage` cujo `mode` está em `GAME_MODES`
-  (sem argumento = todos; com modo, filtra — e o modo egg também aceita mapas
-  customizados do modo bomb). Mapas customizados têm `color` por plataforma,
+  (sem argumento = todos; com modo, filtra — o modo egg também aceita mapas
+  customizados do modo bomb e o modo **rhythm aceita qualquer mapa custom**,
+  enquanto o mapa próprio dedicado do modo não é definido). Mapas
+  customizados têm `color` por plataforma,
   `spawns[]` opcional, `music` (configuração de música do mapa) e `customId`
   (o id original — usado pela seleção de mapas do lobby).
 - Seleção aleatória sem repetição: o jogo cicla por todos os mapas do pool
@@ -906,11 +1015,16 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
 - **Canvas 1080×540** (mesmo espaço lógico do jogo) com grade sutil; desenha o
   mapa igual ao `render.js` (fundo + plataformas com contorno `#222`).
 - **Ferramentas:** *Selecionar* (clica para selecionar, arrasta para mover,
-  alças nos 4 cantos para redimensionar), *+ Plataforma* (arraste para desenhar
+  alças nos 4 cantos para redimensionar — **clicar num spawn também o
+  seleciona** e permite arrastá-lo), *+ Plataforma* (arraste para desenhar
   um retângulo; clique curto cria uma plataforma padrão 200×24), *🚩 Spawns*
   (clique marca onde o jogador nasce — P1–P4 na cor de `SPAWN_COLORS`, arraste
   move, Delete/Excluir remove o selecionado), *Duplicar* e
-  *Excluir* (botão ou tecla Delete/Backspace). Botões que agem sobre a seleção
+  *Excluir* (botão ou tecla Delete/Backspace). Abaixo do canvas fica a caixa
+  **"Plataformas do mapa (N)"** (`#mapPlatformListBox`, borda grossa): lista
+  rolável com cada plataforma criada — **amostra da cor, tamanho (L×A) e
+  coordenadas (x, y)** — clicar num item seleciona a plataforma no canvas
+  (`renderPlatformList()`, reconstruída a cada `renderCanvas()`). Botões que agem sobre a seleção
   (*Duplicar*, *Excluir*) exibem o aviso "Nenhuma plataforma selecionada." no
   `mapEditorNotice` quando acionados sem seleção. Todos os avisos do editor
   também aparecem num **toast fixo** no topo da tela (`#mapEditorToast`,
@@ -1084,6 +1198,14 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
   some **não roda** no modo run (`updatePlayers` retorna antes). O ranking da
   rodada vai pronto em `result.ranking` (sobreviventes > monstro > mortos) e
   `awardRoundPoints` o consome direto.
+- **Modo Ritmo:** sincroniza como o egg/corra — `explosionCount` dispara o som
+  da explosão da prensa em todas as abas e `gs.musicPaused` pausa/retoma a
+  música via `syncMusicPause`. A sequência de setas vive em `gs.rhythm`
+  (publicado pelo host), então clientes desenham as mesmas setas sem simular.
+  O fallback de bomba/ovo também não roda nesse modo. Pontuação da rodada usa
+  `result.deathOrder` (igual ao egg). **Pendência:** o mapa próprio do modo
+  será definido depois — o autor vai informar o arquivo; hoje o modo aceita
+  qualquer mapa custom.
 - **Gamepad:** a atribuição é por playerId e armazenada por aba; o input lê o
   gamepad do player atribuído e mescla com o teclado. **Menus:** `getUiPads` só
   devolve gamepads atribuídos a players **desta aba** (`localPlayerIds`) — não

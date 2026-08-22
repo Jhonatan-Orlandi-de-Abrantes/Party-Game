@@ -1,5 +1,5 @@
 import { state, getMyPlayer } from './state.js';
-import { PLAYER_WIDTH, PLAYER_HEIGHT, DASH_COOLDOWN, BOMB_IMAGE_PATH, EGG_IMAGE_PATH, MAX_BOMB_TIME, TRAIL_LIFE, SHOW_MAP_NAME, RUN_LIVES } from './constants.js';
+import { PLAYER_WIDTH, PLAYER_HEIGHT, DASH_COOLDOWN, BOMB_IMAGE_PATH, EGG_IMAGE_PATH, MAX_BOMB_TIME, TRAIL_LIFE, SHOW_MAP_NAME, RUN_LIVES, RHYTHM_ARROW_COLORS, RHYTHM_BASE_WINDOW, RHYTHM_WINDOW_STEP, RHYTHM_MIN_WINDOW } from './constants.js';
 import { getFpsEnabled, getFpsColor } from './storage.js';
 import { drawHat } from './hats.js';
 import { drawCosmetics } from './cosmetics.js';
@@ -52,7 +52,7 @@ export function drawScene() {
 
   const mapColors = (gs.map && gs.map.platformColors) || ['#a3d97a', '#7fd3f2', '#f6c768', '#f2a1a1'];
   gs.platforms.forEach((platform, index) => {
-    ctx.fillStyle = platform.color || mapColors[index % mapColors.length];
+    ctx.fillStyle = platform.red ? '#c92a2a' : (platform.color || mapColors[index % mapColors.length]);
     ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
     ctx.strokeStyle = '#222';
     ctx.lineWidth = 3;
@@ -61,6 +61,8 @@ export function drawScene() {
 
   drawParticles();
   drawTrails();
+
+  if (gs.mode === 'rhythm') drawRhythmArrows(gs, time);
 
   gs.players.forEach(player => {
     if (!player.alive) return;
@@ -82,6 +84,7 @@ export function drawScene() {
 
   drawLeaderCrown(gs, time);
   if (gs.mode === 'egg') drawEggScores(gs);
+  if (gs.mode === 'rhythm') drawRhythmCrusher(gs);
   drawBombTimer(gs, time);
   drawMapName(gs);
   drawStats();
@@ -92,6 +95,14 @@ function drawPlayer(player, time) {
   const h = PLAYER_HEIGHT;
   const x = player.x - w / 2;
   const y = player.y - h;
+
+  const rhythmScale = state.gameState && state.gameState.mode === 'rhythm' ? RHYTHM_PLAYER_SCALE : 1;
+  ctx.save();
+  if (rhythmScale !== 1) {
+    ctx.translate(player.x, player.y);
+    ctx.scale(rhythmScale, rhythmScale);
+    ctx.translate(-player.x, -player.y);
+  }
 
   const isMonster = !!player.isMonster;
   const bodyColor = isMonster ? '#6a2fb8' : player.color;
@@ -239,19 +250,59 @@ function drawPlayer(player, time) {
     ctx.fill();
     ctx.globalAlpha = 1;
   }
+
+  ctx.restore();
 }
 
 function drawNickname(player) {
+  const lift = state.gameState && state.gameState.mode === 'rhythm'
+    ? PLAYER_HEIGHT * RHYTHM_PLAYER_SCALE
+    : PLAYER_HEIGHT;
   ctx.font = 'bold 13px "Trebuchet MS", Arial, sans-serif';
   ctx.textAlign = 'center';
   ctx.lineWidth = 3;
   ctx.strokeStyle = '#fff';
-  ctx.strokeText(player.nickname, player.x, player.y - PLAYER_HEIGHT - 14);
+  ctx.strokeText(player.nickname, player.x, player.y - lift - 14);
   ctx.fillStyle = '#222';
-  ctx.fillText(player.nickname, player.x, player.y - PLAYER_HEIGHT - 14);
+  ctx.fillText(player.nickname, player.x, player.y - lift - 14);
 }
 
 function drawBombTimer(gs, time) {
+  const rh = gs.mode === 'rhythm' ? gs.rhythm : null;
+  if (rh) {
+    if (rh.phase !== 'play' || !(rh.seq && rh.seq.length)) return;
+    const windowS = Math.max(RHYTHM_MIN_WINDOW, RHYTHM_BASE_WINDOW - (rh.round - 1) * RHYTHM_WINDOW_STEP);
+    const frac = Math.max(0, Math.min(1, rh.arrowTimer / windowS));
+    let color = '#2ecc40';
+    if (frac <= 0.33) color = '#e74c3c';
+    else if (frac <= 0.66) color = '#f1c40f';
+    const text = `${Math.max(0, rh.arrowTimer).toFixed(1)}s`;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    roundRectPath(ctx, 540 - 92, 12, 184, 40, 12);
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 3;
+    roundRectPath(ctx, 540 - 92, 12, 184, 40, 12);
+    ctx.stroke();
+    ctx.fillStyle = color;
+    roundRectPath(ctx, 540 - 88, 44, 176 * frac, 6, 3);
+    ctx.fill();
+    ctx.font = '18px "Press Start 2P", "Trebuchet MS", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const urgency2 = frac <= 0.33 ? 1 + Math.sin(time * 8) * 0.12 : 1;
+    ctx.save();
+    ctx.translate(540, 32);
+    ctx.scale(urgency2, urgency2);
+    ctx.translate(-540, -32);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 4;
+    ctx.strokeText(text, 540, 32);
+    ctx.fillStyle = color;
+    ctx.fillText(text, 540, 32);
+    ctx.restore();
+    return;
+  }
   if (gs.bombTime === undefined) return;
   const isEgg = gs.mode === 'egg';
   const isRun = gs.mode === 'run';
@@ -584,4 +635,94 @@ function drawStats() {
     ctx.fillStyle = color;
     ctx.fillText(line, 10 + padX, ty);
   });
+}
+
+// Tamanhos do modo Ritmo — mude aqui para ajustar pessoalmente:
+const RHYTHM_ARROW_SIZE = 38;      // tamanho das setas acima dos players
+const RHYTHM_PLAYER_SCALE = 1.45;  // multiplicador do tamanho dos players
+const RHYTHM_CRUSHER_WIDTH = 140;  // largura da prensa
+
+const RHYTHM_ARROW_ANGLE = { up: 0, right: Math.PI / 2, down: Math.PI, left: -Math.PI / 2 };
+
+function drawThickArrow(x, y, size, dir, color, alpha, scale) {
+  const angle = RHYTHM_ARROW_ANGLE[dir] || 0;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.scale(scale, scale);
+  ctx.globalAlpha = alpha;
+  const s = size / 22;
+  ctx.beginPath();
+  ctx.moveTo(0, -11 * s);
+  ctx.lineTo(10.5 * s, -0.5 * s);
+  ctx.lineTo(4.5 * s, -0.5 * s);
+  ctx.lineTo(4.5 * s, 11 * s);
+  ctx.lineTo(-4.5 * s, 11 * s);
+  ctx.lineTo(-4.5 * s, -0.5 * s);
+  ctx.lineTo(-10.5 * s, -0.5 * s);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.lineWidth = 2.4 * s;
+  ctx.strokeStyle = '#1a1a2e';
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawRhythmArrows(gs, time) {
+  const rh = gs.rhythm;
+  if (!rh) return;
+  gs.players.forEach(player => {
+    if (!player.alive) return;
+    const seq = rh.seq || [];
+    if (seq.length === 0) return;
+    const gap = RHYTHM_ARROW_SIZE + 12;
+    const total = (seq.length - 1) * gap;
+    const baseY = player.y - PLAYER_HEIGHT * RHYTHM_PLAYER_SCALE - RHYTHM_ARROW_SIZE - 20;
+    for (let i = 0; i < seq.length; i++) {
+      const dir = seq[i];
+      const x = player.x - total / 2 + i * gap;
+      let alpha = 1;
+      let scale = 1;
+      if (i < rh.idx) alpha = 0.28;
+      if (i === rh.idx && rh.phase === 'play') {
+        scale = 1.18 + Math.sin(time * 9) * 0.14;
+        alpha = 1;
+      }
+      drawThickArrow(x, baseY, RHYTHM_ARROW_SIZE, dir, RHYTHM_ARROW_COLORS[dir], alpha, scale);
+    }
+    ctx.font = 'bold 22px Verdana, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = '#fff';
+    const scoreText = `${player.rhythmScore || 0} pts`;
+    ctx.strokeText(scoreText, player.x, baseY - RHYTHM_ARROW_SIZE - 8);
+    ctx.fillStyle = player.color;
+    ctx.fillText(scoreText, player.x, baseY - RHYTHM_ARROW_SIZE - 8);
+  });
+}
+
+function drawRhythmCrusher(gs) {
+  const rh = gs.rhythm;
+  if (!rh || !rh.victimId || rh.crusherY == null) return;
+  const victim = gs.players.find(player => player.id === rh.victimId);
+  if (!victim) return;
+  const width = RHYTHM_CRUSHER_WIDTH;
+  const band = width * 0.18;
+  const x = victim.x - width / 2;
+  const top = -420;
+  const height = rh.crusherY - top;
+  ctx.fillStyle = '#3d3d52';
+  ctx.fillRect(x, top, width, height);
+  ctx.strokeStyle = '#15151f';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(x + 2, top, width - 4, height - 2);
+  ctx.fillStyle = '#22222e';
+  ctx.fillRect(x, rh.crusherY - band, width, band);
+  ctx.strokeStyle = '#15151f';
+  ctx.strokeRect(x, rh.crusherY - band, width, band);
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.fillRect(x + 10, top + 10, 12, Math.max(0, height - band * 2));
 }

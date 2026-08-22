@@ -74,7 +74,7 @@ export function addLocalPlayer(nickname) {
   }
   const playerId = uuid();
   const deviceId = getDeviceId();
-  const player = { id: playerId, nickname, color: randomColor(), host: false, joinedAt: Date.now(), lastSeen: Date.now(), deviceId, hat: getHat(deviceId), cosmetics: getEquippedCosmetics(), local: true, score: 0 };
+  const player = { id: playerId, nickname, color: randomColor(), host: false, joinedAt: Date.now(), lastSeen: Date.now(), deviceId, hat: getHat(deviceId), cosmetics: [], local: true, score: 0 };
   room.players.push(player);
   saveRooms();
   state.currentRoom = room;

@@ -28,7 +28,7 @@ export const CUSTOM_MAPS_KEY = 'bombPartyCustomMapsV1';
 export const CUSTOM_MUSICS_KEY = 'bombPartyCustomMusicsV1';
 export const MAX_COSMETIC_SIZE = 200000;
 export const MAX_COSMETIC_IMAGE_DIM = 128;
-export const MAX_COSMETICS_PER_PLAYER = 5;
+export const MAX_COSMETICS_PER_PLAYER = 1;
 export const MAX_MAP_MUSIC_SIZE = 2500000;
 export const MAX_MAP_PLATFORMS = 60;
 export const MAP_EDITOR_WIDTH = 1080;
@@ -71,9 +71,10 @@ export const DASH_ACTIVE_TIME = 0.18;
 export const EXPLOSION_COLORS = ['#3a3a3a', '#c1121f', '#f77f00', '#fcbf49'];
 export const GAME_MODE_NAME = '💣 Bomb Clássico';
 export const GAME_MODES = [
-  { id: 'bomb', name: '💣 Bomb Clássico', color: '#ff6b6b' },
+  { id: 'bomb', name: '💣 Bomb Clássico', color: '#868e96' },
   { id: 'egg', name: '🥚 Pegue o Ovo', color: '#ffd23f' },
-  { id: 'run', name: '🏃 CORRA!', color: '#b5179e' }
+  { id: 'run', name: '🏃 CORRA!', color: '#ff6b6b' },
+  { id: 'rhythm', name: '🎵 Ritmo', color: '#9b5de5' }
 ];
 export const BOMB_IMAGE_PATH = 'src/Images/BombGame/bomb.png';
 export const EGG_IMAGE_PATH = 'src/Images/egg/egg.png';
@@ -82,13 +83,23 @@ export const EGG_SCORE_TICK = 0.2;
 export const RUN_ROUND_TIME = 12;
 export const RUN_LIVES = 2;
 export const MONSTER_HIT_COOLDOWN = 1.2;
+export const RHYTHM_BASE_LEN = 3;
+export const RHYTHM_MAX_LEN = 10;
+export const RHYTHM_BASE_WINDOW = 1.5;
+export const RHYTHM_WINDOW_STEP = 0.12;
+export const RHYTHM_MIN_WINDOW = 0.45;
+export const RHYTHM_WARN_TIME = 2;
+export const RHYTHM_SLAM_SPEED = 1500;
+export const RHYTHM_RISE_SPEED = 110;
+export const RHYTHM_NEXT_DELAY = 1;
+export const RHYTHM_ARROW_COLORS = { up: '#51cf66', down: '#22d3ee', left: '#c24b99', right: '#f9393f' };
 export const MAX_SPAWNS = 4;
 export const SPAWN_COLORS = ['#ff6b6b', '#4dabf7', '#51cf66', '#ff922b'];
 export const TRAIL_LIFE = 0.35;
 
 export const controlSets = [
-  { left: 'a', right: 'd', jump: 'w', dash: 'shift' },
-  { left: 'a', right: 'd', jump: 'w', dash: 'shift' },
-  { left: 'a', right: 'd', jump: 'w', dash: 'shift' },
-  { left: 'a', right: 'd', jump: 'w', dash: 'shift' }
+  { left: 'a', right: 'd', jump: ' ', dash: 'shift' },
+  { left: 'a', right: 'd', jump: ' ', dash: 'shift' },
+  { left: 'a', right: 'd', jump: ' ', dash: 'shift' },
+  { left: 'a', right: 'd', jump: ' ', dash: 'shift' }
 ];

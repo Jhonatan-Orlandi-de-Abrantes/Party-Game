@@ -9,7 +9,6 @@ import {
 import {
   MAX_COSMETIC_SIZE,
   MAX_COSMETIC_IMAGE_DIM,
-  MAX_COSMETICS_PER_PLAYER,
   PLAYER_WIDTH,
   PLAYER_HEIGHT,
   uuid
@@ -66,11 +65,7 @@ export function removeCosmetic(id) {
 }
 
 export function equipCosmetic(id, offsetX, offsetY, scale) {
-  const equipped = getEquippedCosmetics();
-  if (equipped.length >= MAX_COSMETICS_PER_PLAYER) return false;
-  if (equipped.some(e => e.id === id)) return false;
-  equipped.push({ id, offsetX: offsetX || 0, offsetY: offsetY || 0, scale: scale || 1 });
-  saveEquippedCosmetics(equipped);
+  saveEquippedCosmetics([{ id, offsetX: offsetX || 0, offsetY: offsetY || 0, scale: scale || 1 }]);
   return true;
 }
 
@@ -162,7 +157,7 @@ export function drawCosmetics(ctx, player, time) {
     if (!cosmetic) continue;
 
     ctx.save();
-    ctx.translate(px + (entry.offsetX || 0), py - h + (entry.offsetY || 0));
+    ctx.translate(px - w / 2 + (entry.offsetX || 0), py - h + (entry.offsetY || 0));
 
     const s = entry.scale || 1;
     if (s !== 1) {

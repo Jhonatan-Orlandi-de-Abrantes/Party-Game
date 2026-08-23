@@ -1,7 +1,8 @@
-import { STORAGE_KEY, HOST_TIMEOUT, PUBLISH_INTERVAL, COUNTDOWN_SECONDS } from './constants.js';
+import { STORAGE_KEY, HOST_TIMEOUT, PUBLISH_INTERVAL, COUNTDOWN_SECONDS, WAR_SHOT_SOUNDS, WAR_GUNLOAD_SOUNDS } from './constants.js';
 import { state, getMyPlayer, isHost } from './state.js';
 import * as storage from './storage.js';
 import * as rooms from './rooms.js';
+import * as net from './net.js';
 import * as input from './input.js';
 import * as game from './game.js';
 import { drawScene, loadBombImage, loadEggImage, setResolutionScale } from './render.js';
@@ -34,6 +35,7 @@ import {
   activateUiFocus,
   uiBack,
   showPadConnect,
+  showKeyboardConnect,
   getPadConnectIndex,
   getSettingsPlayer,
   showResultsOverlay,
@@ -54,6 +56,30 @@ function showRoundResult(result) {
 
 function playDeathSoundIfNew(st) {
   if (!st) return;
+  const shots = st.shotCount || 0;
+  if (state.lastShotCount == null) {
+    state.lastShotCount = shots;
+  } else if (shots !== state.lastShotCount && st.mode === 'war') {
+    state.lastShotCount = shots;
+    audio.playSfxFile(WAR_SHOT_SOUNDS[Math.floor(Math.random() * WAR_SHOT_SOUNDS.length)]);
+    return;
+  }
+  const gunloads = st.gunloadCount || 0;
+  if (state.lastGunloadCount == null) {
+    state.lastGunloadCount = gunloads;
+  } else if (gunloads !== state.lastGunloadCount && st.mode === 'war') {
+    state.lastGunloadCount = gunloads;
+    audio.playSfxFile(WAR_GUNLOAD_SOUNDS[Math.floor(Math.random() * WAR_GUNLOAD_SOUNDS.length)]);
+    return;
+  }
+  const orbPicks = st.orbPickCount || 0;
+  if (state.lastOrbPickCount == null) {
+    state.lastOrbPickCount = orbPicks;
+  } else if (orbPicks !== state.lastOrbPickCount && st.mode !== 'rhythm') {
+    state.lastOrbPickCount = orbPicks;
+    audio.playPop();
+    return;
+  }
   if (st.mode === 'egg' || st.mode === 'run' || st.mode === 'rhythm') {
     const count = st.explosionCount || 0;
     if (state.lastExplosionCount == null) {
@@ -303,6 +329,9 @@ function enterGameScreen() {
   state.deathSoundPlayed = false;
   state.lastExplosionCount = null;
   state.lastRunHitCount = null;
+  state.lastOrbPickCount = null;
+  state.lastShotCount = null;
+  state.lastGunloadCount = null;
   state.musicPausedApplied = false;
   state.lastSeenRev = -1;
   state.accTime = 0;
@@ -452,6 +481,7 @@ refs.joinRoomBtn.addEventListener('click', () => {
   try {
     const nickname = refs.nicknameInput.value.trim();
     const code = refs.roomCodeInput.value.trim().toUpperCase();
+    net.netRequestRoom(code);
     const error = rooms.joinRoom(nickname, code);
     if (error) {
       showNotice(refs.welcomeNotice, error);
@@ -502,6 +532,17 @@ if (refs.resultsLobbyBtn) {
 }
 setResultsOverlayBackCallback(quitToLobby);
 
+refs.fullscreenBtn.addEventListener('click', () => {
+  const el = document.documentElement;
+  if (document.fullscreenElement || document.webkitFullscreenElement) {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (exit) exit.call(document);
+    return;
+  }
+  const request = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (request) request.call(el);
+});
+
 refs.gameQuitBtn.addEventListener('click', () => {
   showConfirm('Voltar para o lobby?', quitToLobby);
 });
@@ -539,6 +580,67 @@ window.addEventListener('bombparty:resolutionchange', () => {
 document.addEventListener('keydown', input.onKeyDown);
 document.addEventListener('keyup', input.onKeyUp);
 
+const KEY_ASSIGN_IGNORED_RE = /^(f\d{1,2}|tab|escape|capslock|numlock|scrolllock|contextmenu|meta|alt|control|shift|insert|home|end|pageup|pagedown|printscreen|pause|dead)$/i;
+
+function tryOpenKeyboardAssign(event) {
+  if (event.ctrlKey || event.altKey || event.metaKey) return;
+  if (event.repeat) return;
+  const key = event.key || '';
+  if (!key || KEY_ASSIGN_IGNORED_RE.test(key)) return;
+  if (state.currentScreen !== 'lobby') return;
+  const room = state.currentRoom;
+  if (!room || room.started) return;
+  if (document.querySelector('.key-btn.recording')) return;
+  const active = document.activeElement;
+  if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return;
+  if (document.querySelector('.modal:not(.hidden)')) return;
+  if (getPadConnectIndex() !== -1) return;
+  const pads = input.connectedGamepads();
+  const keyboardInUse = (state.localPlayerIds || []).some(id => {
+    const assigned = storage.getGamepadAssignment(id);
+    return !(assigned >= 0 && pads.some(pad => pad.index === assigned));
+  });
+  if (keyboardInUse) return;
+  event.stopImmediatePropagation();
+  showKeyboardConnect();
+}
+
+document.addEventListener('keydown', tryOpenKeyboardAssign);
+
+const MENU_NAV_KEYS = {
+  arrowup: { dx: 0, dy: -1 }, w: { dx: 0, dy: -1 },
+  arrowdown: { dx: 0, dy: 1 }, s: { dx: 0, dy: 1 },
+  arrowleft: { dx: -1, dy: 0 }, a: { dx: -1, dy: 0 },
+  arrowright: { dx: 1, dy: 0 }, d: { dx: 1, dy: 0 }
+};
+
+function isTypingTarget(el) {
+  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+}
+
+function handleMenuKeyboard(event) {
+  if (document.querySelector('.key-btn.recording')) return;
+  const active = document.activeElement;
+  if (isTypingTarget(active)) return;
+  const inMatch = state.currentScreen === 'game' && !state.endShown &&
+    !document.querySelector('.modal:not(.hidden)');
+  if (inMatch) return;
+  const key = (event.key || '').toLowerCase();
+  const dir = MENU_NAV_KEYS[key];
+  if (dir) {
+    event.preventDefault();
+    moveUiFocus(dir.dx, dir.dy);
+    return;
+  }
+  if (key === ' ' || key === 'enter') {
+    event.preventDefault();
+    if (active && active.tagName === 'BUTTON') active.blur();
+    activateUiFocus();
+  }
+}
+
+document.addEventListener('keydown', handleMenuKeyboard);
+
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape' || state.currentScreen !== 'game') return;
   if (confirmModalOpen()) {
@@ -557,8 +659,9 @@ document.addEventListener('click', event => {
   if (event.target.closest('button')) audio.playClick();
 }, true);
 
-window.addEventListener('storage', event => {
-  if (event.key !== STORAGE_KEY) return;
+function handleStorageSync(event) {
+  const changedKey = event.key != null ? event.key : (event.detail && event.detail.key);
+  if (!changedKey || changedKey !== STORAGE_KEY) return;
   const previousSignature = rooms.roomSignature(state.currentRoom);
   const previousPlayers = state.currentRoom ? [...state.currentRoom.players] : null;
   storage.syncRooms();
@@ -642,7 +745,10 @@ window.addEventListener('storage', event => {
         if (li) spawnConfetti(30);
       });
   }
-});
+}
+
+window.addEventListener('storage', handleStorageSync);
+window.addEventListener('bombparty:remotestorage', handleStorageSync);
 
 window.addEventListener('beforeunload', () => {
   rooms.heartbeat();
@@ -943,6 +1049,7 @@ function prefillRoomCodeFromUrl() {
 }
 
 function initPage() {
+  net.initNet();
   prefillRoomCodeFromUrl();
   storage.syncRooms();
   if (state.currentRoom && state.myPlayerId) {

@@ -8,8 +8,7 @@
 
 ## 1. O que é o projeto
 
-**Party Game** é um jogo de plataforma multiplayer **local** (roda em um único
-computador), inspirado em jogos como *PICO PARK* e *Level Devil*.
+**Party Game** é um jogo de plataforma multiplayer, inspirado em jogos como *PICO PARK* e *Level Devil*.
 
 - Cada jogador abre o jogo em uma **aba/janela diferente** do navegador (ou em
   janelas lado a lado) e participa da mesma sala.
@@ -209,13 +208,28 @@ npx serve .
 # ou: python -m http.server 8000
 ```
 
-Depois abra `http://localhost:8000` em **duas ou mais abas/janelas** do mesmo
-navegador:
+**Com multiplayer online entre dispositivos** (base pronta, servidor relay
+próprio):
+
+```
+cd server
+npm install        # só na primeira vez (dependência: ws)
+npm start          # sobe o jogo em http://localhost:3000
+```
+
+O servidor Node (`server/server.js`) serve os arquivos do jogo **e** retransmite
+as mensagens de sala via WebSocket (`/ws`). Para jogar entre celular/PCs na
+mesma rede, abra `http://<ip-do-host>:3000` nos aparelhos (ou publique com um
+túnel como ngrok/cloudflared para amigos fora da rede).
+
+Depois abra o jogo em **duas ou mais abas/janelas** do mesmo
+navegador (ou em dispositivos diferentes, usando o servidor):
 1. Na primeira aba, clique em **"Criar sala"** e crie a sala (vira HOST). Não há
    escolha de modo — a partida é mista (abas separadas e/ou mesma tela).
 2. Nas outras, entrem com o código da sala (ou pelo **link de convite**
    `?room=CÓDIGO`, que pré-preenche o código).
-3. No lobby, cada um escolhe seu controle (Teclado / Controle 1–4) e pode abrir
+3. No lobby, cada um escolhe seu controle (Teclado / 📱 Toque (Móvel), quando
+   habilitado nas configurações / Controle 1–4) e pode abrir
    a engrenagem ⚙ para ajustar cor, chapéu, atalhos, FPS, resolução e volume.
    Conecte um controle e pressione um botão: o jogo pergunta
    se você quer **atribuir o controle a um jogador desta tela** ou **criar um
@@ -223,9 +237,13 @@ navegador:
    única tela.
 4. O HOST clica em "Iniciar partida".
 
-**Importante:** como usa `localStorage`, todos os jogadores devem estar no
-mesmo navegador e na mesma origem. Não funciona entre máquinas diferentes
-(arquitetura atual).
+**Importante:** como usa `localStorage`, sem o servidor todos os jogadores
+devem estar no mesmo navegador e na mesma origem. **Com o servidor relay ativo**
+(`server/server.js`), as salas sincronizam também entre dispositivos diferentes
+(cada aparelho mantém sua cópia local espelhada pelo relay — ver
+`src/js/net.js` abaixo). Sem servidor, tudo continua funcionando como antes
+(o cliente tenta conectar em `/ws`; se não houver servidor, cai em modo local
+silenciosamente; `?net=0` na URL desliga a tentativa).
 
 ---
 
@@ -234,6 +252,8 @@ mesmo navegador e na mesma origem. Não funciona entre máquinas diferentes
 ```
 PartyGame/
 ├── index.html              → Estrutura HTML das telas (welcome, lobby, game) + popups/modal
+├── README.md               → Apresentação do repositório no GitHub (badges dos modos, como jogar)
+├── COMO-HOSPEDAR.md        → Guia passo a passo para publicar o jogo com online funcional
 ├── DOC-IDEIAS-APLICACOES.url → Atalho para Google Doc com ideias futuras
 ├── JOGOS-REFERENCIA.txt      → Jogos usados como referência visual/sonora
 ├── plano-online.png          → Imagem/plano do modo online (referência futura)
@@ -254,7 +274,8 @@ PartyGame/
 │       ├── main.js           → Ponto de entrada: orquestra tudo, loops, eventos, transições
 │       ├── constants.js      → Constantes de jogo (física, timer, teclas, prefixos de storage)
 │       ├── state.js          → Estado global compartilhado + helpers (getMyPlayer, isHost)
-│       ├── storage.js        → Camada de leitura/escrita do localStorage
+│       ├── storage.js        → Camada de leitura/escrita do localStorage (+ relay para o servidor online)
+│       ├── net.js            → Cliente WebSocket do modo online (conecta em /ws, retransmite e aplica mensagens remotas)
 │       ├── rooms.js          → Salas, jogadores, host, modo, heartbeat, limpeza de inativos
 │       ├── input.js          → Input de teclado/gamepad; publicação por playerId; atalhos custom
 │       ├── game.js           → Simulação da partida (física, bomba, colisões, partículas)
@@ -265,6 +286,7 @@ PartyGame/
 │       ├── cosmetics.js      → Cosméticos customizados (imagem/código): CRUD, equipar, desenho e preview
 │       ├── ui.js             → DOM/UI: lobby, aba de configs, seleção de chapéu, gerenciador de cosméticos, modal de confirmação
 │       ├── touch.js          → Controles touch mobile (setas/analogico, editor de layout)
+│       ├── colorPicker.js    → Seletor de cores próprio (grade de swatches) usado por todos os input[type=color]
 │       ├── donate.js         → Modal de doação PIX com código copia-e-cola
 │       ├── audio.js          → Música (menu/jogo) e efeitos (WebAudio + mp3), com volumes
 │       └── effects.js        → Confetes (efeitos visuais DOM, ancoráveis a um elemento)
@@ -272,6 +294,9 @@ PartyGame/
 │   ├── menu/               → Música do menu (menu1.mp3 … menu5.mp3)
 │   ├── game/               → Música da partida (gm1.mp3 … gm11.mp3)
 │   └── game-RUN/           → Música do modo "CORRA!" (gmr1.mp3)
+├── server/                 → Servidor de multiplayer online (relay WebSocket + arquivos estáticos)
+│   ├── server.js           → Node puro: serve o jogo e retransmite mensagens por sala (`/ws`)
+│   └── package.json        → Dependência única: ws
 └── sounds/
     ├── countdown/          → Sons de contagem regressiva (countdown.mp3, start-menu.mp3)
     ├── jump/               → Sons de pulo (sorteado dinamicamente da pasta: jump1.mp3, …)
@@ -310,9 +335,12 @@ PartyGame/
   (`canvas.width/height` = `1080·escala` × `540·escala`) e repassa ao `render.js`.
 - Trata os eventos de `storage` (outra aba mudou a sala): detecta **quem entrou
   e quem saiu** no lobby, mostra alertas ("X saiu" vermelho, "Você agora é o
-  HOST!" amarelo) e confetes.
+  HOST!" amarelo) e confetes. O corpo vive em `handleStorageSync(event)` e é
+  registrado também para o evento customizado `bombparty:remotestorage` — assim
+  mensagens vindas do servidor online (`net.js`) seguem o mesmo caminho.
 - Configura músicas (menu vs. jogo), efeitos de botão, confete ao iniciar
-  partida, e os handlers da UI (cor, auto-pass, FPS/ping, resolução, volume).
+  partida, e os handlers da UI (cor, auto-pass, FPS/ping, resolução, volume,
+  **tela cheia** via `#fullscreenBtn`).
 - **Handlers de criar/entrar na sala** (createRoomBtn/joinRoomBtn): todo o
   fluxo — validação, criação, confete e `showLobby()` — roda dentro de um
   `try/catch`; qualquer falha aparece no aviso vermelho da tela inicial em vez
@@ -368,7 +396,8 @@ PartyGame/
   `MAX_MAP_MUSIC_SIZE` (2,5MB), `MAX_MAP_PLATFORMS` (60),
   `MAP_EDITOR_WIDTH/HEIGHT` (1080×540) e `GAME_MODES` (lista de modos
   suportados — `bomb` = "💣 Bomb Clássico", `egg` = "🥚 Pegue o Ovo",
-  `run` = "🏃 CORRA!" e `rhythm` = "🎵 Ritmo", cada um com a propriedade
+  `run` = "🏃 CORRA!", `rhythm` = "🎵 Ritmo" e `war` = "🔫 GUERRA!" (verde
+  escuro), cada um com a propriedade
   `color` usada pelo tema do lobby; usada pelo seletor de modo do editor, para
   validar arquivos importados e para renderizar os chips de modo do lobby).
 - **Constantes do modo Pegue o Ovo:** `EGG_IMAGE_PATH`
@@ -393,8 +422,27 @@ PartyGame/
   device id).
 - **`DEFAULT_ROOM_SETTINGS`:** regras padrão da sala —
   `{ powerupFrequency: 50, playerSpeed: 100, scoreLimit: MAX_SCORE }`
-  (powerups ainda não existem; o campo já fica pronto).
+  (`powerupFrequency` controla a frequência de nascimento dos power-ups nos
+  modos bomb/egg/run; **0% = desligado**; o slider fica desabilitado no Ritmo).
 - Caminho da imagem da bomba, cores de explosão, nome do modo.
+- **⚡ POWER-UPS (`POWERUP_CONFIG`, `POWERUPS`, `getPowerup`):** TODOS os
+  valores ajustáveis ficam neste bloco no topo da seção "power-ups" do
+  arquivo. `POWERUP_CONFIG` define `maxOrbsOnMap` (2 bolhas simultâneas),
+  `orbLifetime` (12s até sumir), `orbBlinkLast` (3s finais piscando),
+  `orbRadius` (raio visual/coleta), `spawnIntervalFast`/`spawnIntervalSlow`
+  (intervalo médio entre spawns em 100% e baixa frequência) e
+  `pickupTextLife` (texto flutuante). A lista `POWERUPS` traz os 7 efeitos
+  com `id`, `name`, `icon`, `color`, `modes` (onde nasce) e durações —
+  detalhes na seção "Sistema de Power-ups" abaixo.
+- **🔫 GUERRA (`WAR_*`):** valores ajustáveis no bloco "GUERRA!" —
+  `WAR_LIVES` (3 vidas), `WAR_EXTRA_WEAPONS` (armas extras além de 1 por
+  jogador, máx. 12 no mapa), `WAR_BULLET_SPEED`/`WAR_BULLET_RADIUS`
+  (projéteis), `WAR_FIST_RANGE/DAMAGE/COOLDOWN` (porrada final),
+  `WAR_SHOT_SOUNDS` (sons sincronizados de `sounds/shot/`),
+  `WAR_GUNLOAD_SOUNDS` (recarga sincronizada de `sounds/gunload/`) e a lista
+  `WAR_WEAPONS` (Pistola 1 dano/6 balas, Escopeta 2 dano/3 balas,
+  Metralhadora 1 dano/12 balas — cada uma com `fireCooldown`, cor e som).
+  `getWarWeapon(id)` busca a definição.
 
 ### `src/js/state.js`
 - Objeto `state` global: salas, jogador atual, estado do jogo, teclas
@@ -443,6 +491,57 @@ PartyGame/
     `putCustomMusic`/`deleteCustomMusic` (`bombPartyCustomMusicsV1`, guarda
     `{ name, data: dataURL }` por id — como é compartilhado entre as abas do
     navegador, a música personalizada do mapa toca para toda a party).
+- **Relay do modo online:** `saveRooms`, `publishGameState`,
+  `writePlayerInput` e `removePlayerInput` chamam `net.netRelay(key, valor)`
+  após gravar no `localStorage`. Assim o servidor retransmite exatamente o que
+  hoje flui pelo evento `storage` — os leitores não mudaram nada.
+
+### `src/js/net.js` (modo online — relay WebSocket)
+- Cliente de rede **opcional**: conecta em `ws(s)://<host da página>/ws`
+  automaticamente quando a página é servida por HTTP (não roda em `file://`;
+  `?net=0` na URL desliga). Se não houver servidor, reconecta a cada 3s em
+  silêncio e o jogo segue 100% local.
+- **Servidor externo:** pode apontar para outro endereço via parâmetro
+  `?srv=https://servidor.exemplo.com`, constante global
+  `window.BOMBPARTY_SERVER_URL` ou a chave salva `bombPartyServerUrl` (nessa
+  ordem de prioridade; o valor escolhido é persistido). Nesse caso conecta em
+  `<srv>/ws` — útil quando o site estático (Netlify) e o relay (Render) estão
+  em domínios diferentes. O link de convite do lobby inclui `&srv=...`
+  automaticamente quando um servidor externo está em uso. Guia completo de
+  hospedagem: **COMO-HOSPEDAR.md**.
+- `initNet()` (chamado no boot, main.js): abre a conexão e mantém um
+  "membership" — envia `{t:'join', room}` ao servidor sempre que
+  `state.myRoomCode` muda (checagem periódica a cada 4s).
+- **Envio:** `netRelay(key, value)` — usado pela camada de storage para
+  espelhar gravações (`{t:'relay', key, value}`). No-op quando offline.
+- **Recebimento:** mensagem `{t:'remote', key, value}` → grava/remove a chave
+  no `localStorage` **próprio** e dispara o evento customizado
+  `bombparty:remotestorage`. O main.js trata esse evento com a MESMA função do
+  evento `storage` (`handleStorageSync`) — ou seja, salas, estado da partida e
+  inputs remotos chegam por aqui e todo o resto do código continua lendo do
+  localStorage como sempre.
+- **Bootstrap de sala ("quem tem essa sala?"):** ao entrar na tela com um
+  código pendente (link `?room=CÓDIGO`) ou ao clicar em "Entrar"
+  (`netRequestRoom(code)`), o cliente envia `{t:'whois', room}`; o servidor
+  repassa aos membros da sala e quem já possui a sala responde retransmitindo
+  seu snapshot inteiro de salas — assim o novo dispositivo recebe o estado
+  antes de entrar. Limitação atual: se ninguém responder a tempo, o jogador vê
+  "sala não encontrada" e pode tentar de novo.
+- O host continua sendo quem simula e publica o estado (arquitetura
+  host-authority preservada); o servidor é apenas um retransmissor burro.
+
+### `server/server.js` (servidor online)
+- Node puro + `ws`: serve os arquivos estáticos do jogo (raiz do projeto) e
+  aceita WebSocket no caminho `/ws`.
+- Mantém em memória apenas `socket.roomCode` por cliente. Mensagens:
+  - `{t:'join', room}` — registra o socket na sala;
+  - `{t:'relay', key, value}` — retransmite `{t:'remote', ...}` para os outros
+    sockets da mesma sala;
+  - `{t:'whois', room}` — repassa `{t:'whois'}` aos membros da sala (eles
+    respondem com relay do snapshot);
+  - ping/pong a cada 30s derruba conexões mortas.
+- Rodar: `cd server && npm install && npm start` (porta 3000, configurável via
+  variável `PORT`).
 
 ### `src/js/rooms.js`
 - Criação/entrada em salas, geração de código (`randomCode`) e cor (`randomColor`).
@@ -532,11 +631,38 @@ PartyGame/
   começam com `lives: RUN_LIVES`. O monstro encosta num corredor → perde 1
   vida, ganha knockback e `hurtCooldown` de `MONSTER_HIT_COOLDOWN` (pisca no
   render), e `gs.hitCount` sincroniza o som do golpe entre as abas
-  (`sounds/kill/kill4.mp3` via `playSfxFile`). Sem vidas,
+  (`sounds/kill/kill4.mp3` via `playSfxFile`). Cada golpe também dispara
+  `spawnHitBurst()` — estilhaços (como os da explosão, porém menores) na cor do
+  jogador atingido + vermelho/branco. Sem vidas,
   explode como no bomb (`killRunner` → `deathOrder` + `explosionCount` +
   partículas). A rodada acaba quando não sobrar corredor ou o tempo zera —
   `finishRunRound` monta `result.ranking` (sobreviventes por vidas > monstro >
   mortos em ordem inversa).
+- **Regras da GUERRA (`fireWeapon`/`stepWar`/`finishWarRound`):** armas são
+  espalhadas no início (`players + WAR_EXTRA_WEAPONS`, posições via
+  `findFreeSpot()`); encostar numa arma do chão a pega (`weaponPickups`,
+   munição cheia, substitui a atual). O botão de **dash vira GATILHO**
+   (detecção de "apertou agora" via mapa `lastWarTriggers`); na legenda de
+   teclas in-game deste modo o rótulo é **"Tiro/Soco: Shift"** em vez de
+   "Dash" (`formatControls`);
+  `fireWeapon` dispara um projétil na direção `player.facing` (última direção
+  andada), gasta 1 bala, aplica o cooldown da arma e incrementa
+  `gs.shotCount` (sincroniza os sons aleatórios de `sounds/shot/` entre as
+  abas). `stepWar` move os projéteis (`gs.bullets`), remove-os em plataformas/
+  borda e acerta quem cruzar (dano tira vidas + `spawnHitBurst`). Encostar em
+  uma arma do chão também toca som de recarga sincronizado
+  (`gs.gunloadCount` → sorteio de `sounds/gunload/load1-4.mp3`). Só é possível
+  pegar uma arma do chão se você estiver **sem arma** — e a arma **some da mão
+  assim que a munição zera** (`fireWeapon`), equipando o punho na hora. Quem
+  está **sem arma já começa a partida com o punho equipado** — soco curto
+  (`WAR_FIST_RANGE`) na cor do player (dash = soco), com animação de estocada
+  (avança/recua em arco + anel de impacto + linhas de velocidade,
+  `drawSwingFx`). Quando **não sobrar arma no mapa nem bala com ninguém**
+  (`activateWarFistsIfNeeded`, checado a cada frame) os **punhos permanentes**
+  ativam sozinhos (`gs.warFists`): todos lutam até sobrar um.
+  Cada jogador tem `WAR_LIVES` vidas; ao zerar, `killWarPlayer` explode e
+  grava a morte; com ≤1 vivo, `finishWarRound` monta `deathOrder`
+  (pontuação idêntica ao egg: 1º a morrer = 1pt … último vivo = n pts).
 - **Regras do Ritmo (`stepRhythm`/`judgeRhythmSequence`):** `initGame` cria
   `gs.rhythm = { phase, round, seq, idx, arrowTimer, timer, victimId,
   crusherY }` e começa na fase `play`. O movimento dos jogadores fica
@@ -568,6 +694,68 @@ PartyGame/
   timestamp do jogo (`t: gs.time`); pontos antigos são podados após
   `TRAIL_LIFE` (0.35s).
 
+#### Sistema de Power-ups (bolhas rosas "?")
+Bolhas rosas translúcidas com um "?" no centro nascem pelo mapa nos modos
+💣 Bomba, 🥚 Ovo e 🏃 Corra! (nunca no Ritmo). Quem encostar em uma ganha o
+efeito imediatamente. No máximo **2 bolhas** ficam no mapa ao mesmo tempo;
+cada uma some sozinha após **12s** (pisca nos últimos 3s). A frequência de
+nascimento é controlada pelo slider **"Frequência dos power-ups"** nas Regras
+do Jogo do lobby (0% = desligado; indisponível nos modos sem power-ups).
+O slider vai de **0% a 200%**: de 0–100% o intervalo médio entre bolhas cai de
+14s para 4s; acima disso continua acelerando até ~1,5s em 200%.
+
+**Universais — nascem nos 3 modos:**
+
+| Power-up | Duração | Efeito |
+|---|---|---|
+| ⚡ Velocidade | 6s | velocidade de corrida e dash +45% |
+| 💨 Dash Turbo | 6s | cooldown do dash cai para 30% |
+| 👻 Fantasma | 4s | intangível: não recebe a bomba, não tem o ovo roubado e o monstro não consegue acertá-lo |
+| ❄️ Congelar Outros | 2s | congela todos os OUTROS jogadores (só o movimento trava; interações continuam) |
+
+**Exclusivos por modo:**
+
+| Power-up | Modo | Efeito |
+|---|---|---|
+| 💣 Troca | 💣 Bomba | quem estiver com a bomba a passa para o jogador mais distante |
+| ✖️ Pontos Dobrados | 🥚 Ovo | pontos segurando o ovo valem 2x por 8s |
+| ❤️ Coração Extra | 🏃 Corra! | cura +1 vida (máx. 3); se pegar com o monstro: +25% de velocidade por 5s |
+
+**Como aparece na tela:** bolha rosa que flutua/pulsa e "nasce" com escala
+elástica + faíscas rosas; ícones dos efeitos ativos sobre a cabeça do jogador
+com barrinha de tempo restante; FX no corpo — fantasma translúcido piscando,
+rastros amarelos (velocidade) ou vermelhos (monstro acelerado), brasas
+laranjas nos pés (dash turbo) + borda amarela pulsante em volta da barra de
+dash enquanto durar o turbo, cubo de gelo + ❄️ (congelado), placar do ovo
+dourado piscando (pontos dobrados); texto flutuante `ícone Nome!` sobe e some
+ao coletar; som "pop" sincronizado entre todas as abas.
+
+---
+Detalhes técnicos:
+- **Onde ajustar:** bloco `POWERUP_CONFIG` + lista `POWERUPS` em
+  **`src/js/constants.js`** — durações, quantidades e multiplicadores estão
+  TODOS lá, comentados em português.
+- **Spawn (host):** `stepPowerups(dt)` roda nos modos bomb/egg/run (nunca no
+  Ritmo) e chama `spawnOrbsIfNeeded()`: respeita `maxOrbsOnMap`, usa a média
+  `spawnIntervalSlow → spawnIntervalFast` conforme o slider
+  `room.settings.powerupFrequency` (0% = desligado) com jitter ±25% e escolhe
+  tipo aleatório entre os power-ups cujo `modes` inclui o modo atual.
+  `findFreeSpot()` tenta 24 posições evitando plataformas (margem 6px),
+  jogadores (< 70px) e outros orbes (< 90px). Orbes expiram sozinhos após
+  `orbLifetime`. Ao nascer, dispara `spawnOrbSpawnFx()` — explosão de
+  faíscas rosas que flutuam para cima (gravidade negativa) — e o render faz a
+  bolha "nascer" com escala elástica (`easeOutBack` em ~0,35s).
+- **Coleta:** `handleOrbPickups()` detecta encostão (raio + 22px), remove o
+  orbe, chama `applyPowerup(player, def)`, incrementa `gs.orbPickCount`
+  (sincroniza o som "pop" entre abas via `playDeathSoundIfNew`) e registra
+  `gs.recentPickups` para o texto flutuante no render.
+- **Efeitos por jogador:** `player.effects` é um mapa `{ id: segundosRestantes }`
+  decrementado a cada frame (`stepPowerups`); congelamento fica em
+  `player.frozen`. Efeitos são limpos quando o jogador morre.
+- **Render (`render.js`):** `drawOrbs` (bolhas), `drawPowerupIcons` (ícones +
+  barra), `drawFrozenOverlay`, `drawPowerupBodyFx` (rastros/brasas) e
+  `drawPickupTexts` (texto flutuante).
+
 ### `src/js/render.js` (desenho no canvas)
 - `drawScene()`: fundo, plataformas (cada uma pode ter **cor própria** —
   `platform.color`, usada pelos mapas do editor; fallback: cicla
@@ -581,6 +769,17 @@ PartyGame/
 - `drawLeaderCrown()`: coroa dourada **brilhante** (pulso de `shadowBlur`)
   acima do **líder** (único jogador com maior `score` > 0), desenhada após os
   personagens.
+- **Power-ups:** `drawOrbs()` (bolhas rosas "?" flutuando), `drawPowerupIcons()`
+  (ícones + barrinha de duração sobre a cabeça), `drawFrozenOverlay()`,
+  `drawPowerupBodyFx()` (rastros/brasas dos efeitos) e `drawPickupTexts()`
+  (texto flutuante ao coletar) — detalhes na seção "Sistema de Power-ups" do
+  game.js.
+- **GUERRA:** `drawGroundWeapons()` (armas no chão com brilho e pips de
+  munição), `drawBullets()` (projéteis com ponta branca), `drawWarGear()`
+  (arma na cabeça apontando a direção, punho circular na cor do player quando
+  só sobrar porrada, pips amarelos de munição sob os pés no lugar da barra de
+  dash) e `drawSwingFx()` (soco piscando ao golpear). Corações do modo run
+  também são exibidos nesta modalidade.
 - `setResolutionScale(scale)`: o canvas é desenhado sempre no espaço lógico
   **1080×540**; a escala só muda o tamanho do backing store (`setTransform`).
 - `drawPlayer()`: personagens estilo **PICO PARK** (corpo redondo, pés, olhos,
@@ -843,7 +1042,9 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
   do controle via `pollCosmeticsPositionStick` (chamado no `pollUiGamepad` do
   main.js). O modal de código e o gerenciador são fecháveis pelo gamepad
   (Options/B) e o gerenciador tem navegação por direcional adaptada
-  (`moveCosmeticsModalFocus`).
+  (`moveCosmeticsModalFocus`): um dos **primeiros 4 cosméticos** + ↑ vai
+  direto para o botão "Fechar"; "Fechar" + ↓ volta pelos botões de criar;
+  última coluna → passa para "Fechar".
 - **Modal de confirmação:** `showConfirm` / `hideConfirm` — usado para "Sair da
   sala?" e "Voltar para o lobby?".
 - **Modal de atribuição de controle (`padModal`):** `showPadConnect(padIndex)` /
@@ -851,6 +1052,21 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
   tela (atribuir o pad a um deles via `assignPadToPlayer`) ou cria um novo
   jogador (`padCreateBtn` → nome → `handlePadCreate`, que chama
   `rooms.addLocalPlayer` e atribui o pad ao novo player).
+  - **Teclado também tem atribuição:** `showKeyboardConnect()` abre o mesmo
+    modal para o TECLADO (sentinela `KEYBOARD_CONNECT = -2`; atribuir grava
+    `-1` = "Teclado"). No lobby, qualquer tecla comum pressionada
+    (WASD/setas/espaço etc.) quando **nenhum jogador local está usando o
+    teclado** abre a atribuição automaticamente (`tryOpenKeyboardAssign` no
+    main.js) — ignora atalhos/modificadores (Ctrl/Alt/Win, F1–F12, Tab, Esc,
+    Locks...), `event.repeat`, digitação em campos de texto, rebinding de
+    teclas (`.key-btn.recording`) e só roda no lobby sem outros modais abertos.
+    O mouse não dispara (apenas eventos de teclado).
+  - **Navegação por teclado nos menus** (`handleMenuKeyboard` no main.js):
+    **WASD/setas** movem o seletor (`moveUiFocus` com pid indefinido → chave
+    `'kb'`, mesmo visual/colorido dos controles) e **Espaço/Enter** ativam
+    (`activateUiFocus`). Ignora partida em andamento (teclado controla o
+    player), campos de digitação/selects, rebinding de teclas e o mesmo
+    keypress que abriu a atribuição do teclado (`stopImmediatePropagation`).
   - **Detecção automática** (`checkLocalPadConnect` no main.js, via
     `pollUiGamepad` a cada 50ms): com **qualquer sala aberta** (independente de
     `room.mode` — o mesmo campo guarda o modo de jogo escolhido nos chips),
@@ -899,7 +1115,10 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
   um com sua cor (fallback `#2ecc40`).
 - `showScreen` / `showNotice` / `showLobbyAlert`: troca de telas e avisos.
 - `renderLobby()`: lista de jogadores, **seleção de controle por jogador**
-  (Teclado/Controle 1–4; editável pelo próprio jogador local ou pelo HOST —
+  (Teclado / 📱 Toque (Móvel) — aparece só com "Usar botões de toque no jogo"
+  ativo; valor `-3` em `TOUCH_ASSIGNMENT`, e o input de toque vai para quem
+  tiver essa atribuição, via `getTouchAssignedPlayerId()` no input.js /
+  Controle 1–4; editável pelo próprio jogador local ou pelo HOST —
   `canAssign` inclui os jogadores desta tela; impede atribuir o mesmo gamepad a
   dois jogadores e só permite um jogador no teclado — mesma tela = mesmo
   teclado), status de gamepads conectados (lembrete de conectar um controle
@@ -909,8 +1128,10 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
    - `renderLobbyModes()`: chips de **modo de jogo** (um por item de
      `GAME_MODES`, cada um com a cor do modo via `--chip-color`); só o host
      troca (`room.mode`), e a classe `mode-<id>` no `#screen-lobby` alimenta a
-     variável CSS `--mode-color` — a tela tem `transition` de ~0,6s, então as
-     cores (bordas, títulos) animam ao trocar de modo. Os chips ficam **direto
+      variável CSS `--mode-color` — a tela tem `transition` de ~0,6s, então as
+      cores (bordas, títulos) animam ao trocar de modo. Ao clicar num chip toca
+      **pop** (áudio) e o chip faz uma animação de mola (`mode-chip-pop`).
+      Os chips ficam **direto
      no lobby**, junto do botão **"Regras do Jogo"** (só aparece para o host).
      A navegação por controle no lobby segue esta ordem fixa (`getFocusables`):
      **⚙ configurações → "Regras do Jogo" → chips de modo → seletores de
@@ -931,13 +1152,16 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
      por `updateHostConfigHint`). Mapas: grade com pré-visualização
      (mini-canvas desenhado por `drawMapPreview`) separada em **Mapas** e
       **Meus mapas** (cada grupo com borda própria); o host clica para
-      incluir/retirar da partida — os cards exibem os rótulos
+       incluir/retirar da partida — os cards exibem os rótulos
       **"✓ Incluído"** / **"Não incluído"**
-      (`room.mapSelection`; sem seleção = todos). Regras: sliders de
-     **frequência de power-ups** (preparado para o recurso futuro),
-     **velocidade dos jogadores** e **limite de pontuação**, cada um com botão
-     ↺ de reset individual para o padrão (`DEFAULT_ROOM_SETTINGS`); gravam em
-     `room.settings` (`saveRooms`). Enquanto o painel está aberto,
+      (`room.mapSelection`; sem seleção = todos). Abaixo das grades, o botão
+       **"Selecionar todos os mapas"** (`#selectAllMapsBtn`, centralizado,
+       só-host) limpa `mapSelection` (= todos entram). Regras: sliders de
+      **frequência de power-ups** (0–200% — de 100% a 200% o intervalo médio
+      entre bolhas cai de 4s para ~1,5s via `spawnIntervalMin`),
+      **velocidade dos jogadores** e **limite de pontuação** (5–50 pts), cada um com botão
+      ↺ de reset individual para o padrão (`DEFAULT_ROOM_SETTINGS`); gravam em
+      `room.settings` (`saveRooms`). Enquanto o painel está aberto,
      `pollUiGamepad` só aceita navegação do **controle atribuído ao host**
      (demais controles e abas não-host são ignorados; mouse/teclado sempre
      funcionam). `showScreen` fecha o painel ao sair do lobby.
@@ -1035,7 +1259,10 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
   **seletor de modo de jogo** (`GAME_MODES`) — define para qual modo o arquivo
   serve; visualmente é estilizado como um **chip de modo do lobby** (pill com
   bolinha na cor do modo via `--chip-color`, atualizada por
-  `updateModeChipTheme()` ao trocar/carregar mapa). O botão **"← Voltar"**
+  `updateModeChipTheme()` ao trocar/carregar mapa). A barra superior fica em
+  **duas linhas**: a primeira com "← Voltar" + nome do mapa + chips de modo;
+  abaixo, a linha `.map-editor-actions-row` só com as ações **Novo / Salvar /
+  Exportar / Importar**. O botão **"← Voltar"**
   usa a mesma cor do botão "Convidar" do lobby.
 - **Música do mapa:** *Padrão do jogo (aleatória)*, *Nativa* (gm1–gm11) ou
   *Personalizada* — upload de áudio (máx. `MAX_MAP_MUSIC_SIZE` = 2,5MB), salvo
@@ -1043,7 +1270,12 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
   para toda a party). Botões "Ouvir"/"Parar" para preview local.
 - **Persistência:** salva automaticamente (debounce 500ms) em
   `bombPartyCustomMapsV1`; lista "Meus mapas" com Editar/Excluir (excluir também
-  remove a música customizada se nenhum outro mapa a usa).
+  remove a música customizada se nenhum outro mapa a usa). Os modos de cada
+  mapa aparecem como **badges circulares** (`.map-saved-mode-badge` — círculo
+  com borda #222, sombra e anel interno branco no estilo do chip selecionado,
+  fundo na cor do modo) mostrando só o emoji do modo (💣 🥚 🏃 🎵 🔫, tooltip
+  com o nome); o `<li>` tem `flex-wrap`, então nome e badges se reorganizam
+  sem estourar a linha.
 - **Exportar:** baixa `<nome>.pgmap` — JSON `{ format: 'partygame-map',
   version, mode, name, bg, platforms[], spawns[], music }`; se a música for
   personalizada, o data URL é **embutido no arquivo** (portável entre máquinas).
@@ -1056,8 +1288,22 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
 - Controles touch mobile para dispositivos com tela sensível ao toque.
 - **Dois estilos:**
   - **Setas** (`arrows`): botões de seta esquerda/direita + botões de ação
-    (JUMP, DASH).
+    (JUMP + ação).
   - **Joystick analógico** (`analog`): stick virtual + botões de ação.
+- **Rótulo da ação adaptado ao modo** (`MODE_TOUCH_LABELS`): Bomb/Ovo =
+  **DASH**, CORRA! = **USAR**, GUERRA! = **ATIRAR** (o gatilho também soca na
+  fase de punhos); padrão fora dos modos = DASH. `updateTouchVisibility()`
+  reconstrói os botões quando o modo muda (`builtMode`), mantendo as posições
+  do layout salvo (o editor de layout continua mostrando "DASH" genérico).
+- **Modo Ritmo:** os botões normais são substituídos por uma **fileira fixa de
+  4 setas** (`▲ ▼ ◀ ▶` — cima, baixo, esquerda, direita; classe
+  `.touch-rhythm-row`) centralizada na parte
+  inferior da tela — cada uma publica `up/right/down/left` via
+  `setRhythmTouch()` do input.js, alimentando o julgamento das notas. Assim o
+  Ritmo ficou 100% jogável no celular.
+- **Tela cheia:** botão ⛶ (`#fullscreenBtn`, azul) alterna fullscreen
+  (com fallback `webkit*` para iOS/Safari). Fica **fora de todas as telas**
+  (`body`), então aparece em qualquer tela — menus, lobby e partida.
 - **Editor de layout:** `openLayoutEditor()` abre um editor onde cada botão é
   arrastável (drag-and-drop). As posições são salvas como porcentagens
   (`DEFAULT_TOUCH_LAYOUT`) e persistidas no `localStorage`.
@@ -1065,6 +1311,21 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
   de jogo quando o round está ativo e o player tem touch habilitado.
 - Cada botão usa `setTouchInput(action, bool)` do `input.js` para publicar
   input. O joystick analógico converte posição X em left/right.
+
+### `src/js/colorPicker.js`
+- **Seletor de cores próprio do jogo**: substitui o seletor nativo do navegador
+  em todos os `input[type="color"]` (cor do jogador, cor do FPS, fundo e cor de
+  propriedade no editor), garantindo a mesma tela em PC e celular.
+- `initColorPickers()` (chamado no início do `initUi`) intercepta
+  `pointerdown`/`click` dos inputs (uma única vez, via `data-color-picker-bound`)
+  e abre `openColorPicker(input)` — modal com grade de **14 swatches** redondos
+  (paleta do jogo), anel de destaque na cor atual, botão **"🌈 Outra cor…"**
+  (abre um input nativo escondido para cor customizada) e **Cancelar**; clique
+  no fundo também fecha.
+- Ao escolher, grava `input.value` e dispara eventos `input` + `change`, então
+  **todo o código que já escutava esses inputs continua funcionando sem
+  alteração**. Como é um `.modal` padrão, entra na pilha de foco (controle/B-O)
+  e respeita a trava de rolagem do mobile.
 
 ### `src/js/donate.js`
 - Modal de doação PIX. Botão `donateBox` abre o modal (`donateModal`).
@@ -1139,6 +1400,18 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
 
 ## 7. Pontos de atenção ao mexer no código
 
+- **Mobile/responsividade:** o bloco `@media (max-width: 720px), (max-height:
+  540px)` no fim do style.css reduz a raiz (`html { font-size: 14px }`) para
+  encolher toda a UI e garante modais dentro da tela com rolagem interna
+  (`overscroll-behavior: contain`) — vale para celular em retrato E paisagem.
+  Com qualquer overlay aberta o `body` ganha `.modal-open` (via MutationObserver
+  no initUi) e para de rolar por trás. Em paisagem
+  (`@media (max-height: 540px)`) o canvas trava em `calc(100dvh - 118px)`
+  para a partida inteira ficar visível. Seletores de cor abrem um seletor
+  **próprio do jogo** (`src/js/colorPicker.js` — grade de swatches estilo
+  console, igual em PC e celular; "🌈 Outra cor…" usa o nativo escondido).
+- **Mostrador de FPS/Ping:** desenhado no canvas por `drawStats()` (render.js);
+  caixa 54px, fonte 14px.
 - **Partículas:** ficam em `state.gameState.particles` (o desenho lê de lá).
 - **Fim de rodada:** `endRound` grava `gs.roundResult` (com `winnerId`,
   `loserId`, `loserName`) **antes** de publicar, para os clientes mostrarem o
@@ -1234,7 +1507,10 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
 - **Regras e mapas da sala:** `room.settings` (powerups/velocidade/limite de
   pontos) e `room.mapSelection` (chaves `native:<índice>` / `<customId>`)
   vivem na sala (sincronizam entre abas via `roomSignature`). Sliders do lobby
-  só são editáveis pelo host; power-ups ainda não existem — o slider já fica
-  pronto. Ao adicionar um novo modo em `GAME_MODES`, dê a ele uma propriedade
+  só são editáveis pelo host; em modos sem power-ups (Ritmo/GUERRA) a linha
+  do slider fica **transparente e bloqueada** (classe `.pu-locked`) e tentar
+  interagir dispara o aviso vermelho `#hostConfigWarning` no topo do painel
+  (`showHostConfigWarning`, some após ~2,6s). Ao adicionar um novo modo em
+  `GAME_MODES`, dê a ele uma propriedade
   `color` e crie a classe CSS `#screen-lobby.mode-<id>` com o `--mode-color`
   correspondente para o tema animado funcionar.

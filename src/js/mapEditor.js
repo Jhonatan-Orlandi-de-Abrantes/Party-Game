@@ -856,12 +856,15 @@ function renderSavedList() {
     const mode = document.createElement('span');
     mode.className = 'map-saved-mode';
     const rawModes = Array.isArray(entry.mode) ? entry.mode : [(entry.mode || 'bomb')];
-    mode.textContent = rawModes
-      .map(id => {
-        const def = GAME_MODES.find(m => m.id === id);
-        return def ? def.name : id;
-      })
-      .join(' + ');
+    rawModes.forEach(id => {
+      const def = GAME_MODES.find(m => m.id === id);
+      const badge = document.createElement('span');
+      badge.className = 'map-saved-mode-badge';
+      badge.textContent = def ? def.name.split(' ')[0] : '❓';
+      badge.title = def ? def.name : id;
+      if (def && def.color) badge.style.background = def.color;
+      mode.appendChild(badge);
+    });
 
     const editBtn = document.createElement('button');
     editBtn.className = 'secondary';

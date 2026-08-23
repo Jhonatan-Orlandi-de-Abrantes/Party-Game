@@ -1,5 +1,9 @@
 import { state, getMyPlayer } from './state.js';
-import { PLAYER_WIDTH, PLAYER_HEIGHT, DASH_COOLDOWN, BOMB_IMAGE_PATH, EGG_IMAGE_PATH, MAX_BOMB_TIME, TRAIL_LIFE, SHOW_MAP_NAME, RUN_LIVES, RHYTHM_ARROW_COLORS, RHYTHM_BASE_WINDOW, RHYTHM_WINDOW_STEP, RHYTHM_MIN_WINDOW } from './constants.js';
+import { PLAYER_WIDTH, PLAYER_HEIGHT, DASH_COOLDOWN, BOMB_IMAGE_PATH, EGG_IMAGE_PATH, MAX_BOMB_TIME, TRAIL_LIFE, SHOW_MAP_NAME, RUN_LIVES, RHYTHM_ARROW_COLORS, RHYTHM_BASE_WINDOW, RHYTHM_WINDOW_STEP, RHYTHM_MIN_WINDOW,   POWERUP_CONFIG,
+  getPowerup,
+  WAR_FIST_SWING,
+  getWarWeapon
+} from './constants.js';
 import { getFpsEnabled, getFpsColor } from './storage.js';
 import { drawHat } from './hats.js';
 import { drawCosmetics } from './cosmetics.js';
@@ -61,6 +65,11 @@ export function drawScene() {
 
   drawParticles();
   drawTrails();
+  if (gs.mode !== 'rhythm') drawOrbs(gs, time);
+  if (gs.mode === 'war') {
+    drawGroundWeapons(gs, time);
+    drawBullets(gs);
+  }
 
   if (gs.mode === 'rhythm') drawRhythmArrows(gs, time);
 
@@ -68,10 +77,12 @@ export function drawScene() {
     if (!player.alive) return;
     drawPlayer(player, time);
     drawNickname(player);
-    drawDashIndicator(player, time);
-    if (gs.mode === 'run' && !player.isMonster) {
+    if (gs.mode !== 'war') drawDashIndicator(player, time);
+    drawPowerupIcons(player, time);
+    if ((gs.mode === 'run' && !player.isMonster) || gs.mode === 'war') {
       drawHearts(player);
     }
+    if (gs.mode === 'war') drawWarGear(player, time);
     if (player.hasBomb) {
       const bob = Math.sin(time * 4) * 3;
       drawBomb(player.x, player.y - PLAYER_HEIGHT - 28 + bob, 36, 42);
@@ -82,6 +93,7 @@ export function drawScene() {
     }
   });
 
+  drawPickupTexts(gs);
   drawLeaderCrown(gs, time);
   if (gs.mode === 'egg') drawEggScores(gs);
   if (gs.mode === 'rhythm') drawRhythmCrusher(gs);
@@ -98,6 +110,9 @@ function drawPlayer(player, time) {
 
   const rhythmScale = state.gameState && state.gameState.mode === 'rhythm' ? RHYTHM_PLAYER_SCALE : 1;
   ctx.save();
+  if (puActive(player, 'ghost')) {
+    ctx.globalAlpha = 0.5 + Math.sin(time * 6) * 0.18;
+  }
   if (rhythmScale !== 1) {
     ctx.translate(player.x, player.y);
     ctx.scale(rhythmScale, rhythmScale);
@@ -240,6 +255,12 @@ function drawPlayer(player, time) {
 
   ctx.restore();
 
+  if ((player.frozen || 0) > 0) drawFrozenOverlay(player, x, y, w, h);
+  drawPowerupBodyFx(player, x, y, w, h, time);
+  if (state.gameState && state.gameState.mode === 'war' && (player.swingTime || 0) > 0) {
+    drawSwingFx(player, w, h);
+  }
+
   const isMine = player.id === state.myPlayerId || (state.localPlayerIds || []).includes(player.id);
   if (isMine) {
     const pulse = 0.55 + Math.sin(time * 5) * 0.25;
@@ -251,6 +272,299 @@ function drawPlayer(player, time) {
     ctx.globalAlpha = 1;
   }
 
+  ctx.restore();
+}
+
+function puActive(player, id) {
+  return !!player.effects && (player.effects[id] || 0) > 0;
+}
+
+function easeOutBack(x) {
+  const c1 = 1.70158;
+  const c3 = c1 + 1;
+  return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+}
+
+function drawOrbs(gs, time) {
+  const cfg = POWERUP_CONFIG;
+  (gs.orbs || []).forEach(orb => {
+    const def = getPowerup(orb.type);
+    if (!def || !def.modes.includes(gs.mode)) return;
+    const age = time - orb.bornAt;
+    const remaining = cfg.orbLifetime - age;
+    let alpha = 1;
+    if (remaining < cfg.orbBlinkLast) {
+      alpha = Math.floor(time * 8) % 2 === 0 ? 0.35 : 0.95;
+    }
+    const bob = Math.sin(time * 2.4 + orb.id * 1.7) * 5;
+    const pulse = 1 + Math.sin(time * 3.2 + orb.id) * 0.06;
+    const grow = Math.min(1, age / 0.35);
+    const spawnScale = grow < 1 ? Math.max(0, easeOutBack(grow)) : 1;
+    const r = cfg.orbRadius * pulse * spawnScale;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.arc(orb.x, orb.y + bob, r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 93, 177, 0.16)';
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#ff5db1';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(orb.x - r * 0.35, orb.y + bob - r * 0.4, r * 0.22, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.fill();
+    ctx.font = `bold ${Math.round(r * 1.2)}px "Trebuchet MS", Arial, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(120, 20, 80, 0.85)';
+    ctx.strokeText('?', orb.x, orb.y + bob + 1);
+    ctx.fillStyle = '#ffe3f3';
+    ctx.fillText('?', orb.x, orb.y + bob + 1);
+    ctx.restore();
+  });
+}
+
+function playerLift(gs) {
+  return gs.mode === 'rhythm' ? PLAYER_HEIGHT * RHYTHM_PLAYER_SCALE : PLAYER_HEIGHT;
+}
+
+function drawPowerupIcons(player, time) {
+  const entries = [];
+  Object.keys(player.effects || {}).forEach(id => {
+    const def = getPowerup(id);
+    if (!def) return;
+    const total = id === 'mSpeed' ? def.monsterSpeedDuration : def.duration;
+    entries.push({ icon: def.icon, color: def.color, frac: Math.max(0, Math.min(1, (player.effects[id] || 0) / total)) });
+  });
+  if ((player.frozen || 0) > 0) {
+    const def = getPowerup('freeze');
+    entries.push({ icon: def.icon, color: def.color, frac: Math.max(0, Math.min(1, player.frozen / def.freezeDuration)) });
+  }
+  if (!entries.length) return;
+  const gs = state.gameState;
+  const gap = 24;
+  const baseY = player.y - playerLift(gs) - (player.hasBomb || player.hasEgg ? 68 : 48);
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  entries.forEach((entry, index) => {
+    const cx = player.x + (index - (entries.length - 1) / 2) * gap;
+    const bob = Math.sin(time * 3 + index) * 2;
+    ctx.font = '13px sans-serif';
+    ctx.fillText(entry.icon, cx, baseY + bob);
+    ctx.fillStyle = 'rgba(34,34,34,0.55)';
+    roundRectPath(ctx, cx - 9, baseY + bob + 9, 18, 4, 2);
+    ctx.fill();
+    ctx.fillStyle = entry.color;
+    roundRectPath(ctx, cx - 9, baseY + bob + 9, Math.max(2, 18 * entry.frac), 4, 2);
+    ctx.fill();
+  });
+  ctx.restore();
+}
+
+function drawFrozenOverlay(player, x, y, w, h) {
+  ctx.save();
+  ctx.globalAlpha = 0.5;
+  ctx.fillStyle = '#74c0fc';
+  roundRectPath(ctx, x - 5, y - 5, w + 10, h + 10, 10);
+  ctx.fill();
+  ctx.globalAlpha = 0.9;
+  ctx.strokeStyle = '#e7f5ff';
+  ctx.lineWidth = 2;
+  roundRectPath(ctx, x - 5, y - 5, w + 10, h + 10, 10);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  ctx.font = '14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('❄️', player.x, y + h / 2);
+  ctx.restore();
+}
+
+function drawPowerupBodyFx(player, x, y, w, h, time) {
+  if (Math.abs(player.vx || 0) > 40 && (puActive(player, 'speed') || puActive(player, 'mSpeed'))) {
+    const dir = player.vx > 0 ? -1 : 1;
+    const rgba = puActive(player, 'mSpeed') ? '255,107,107' : '255,212,59';
+    for (let i = 1; i <= 3; i++) {
+      ctx.fillStyle = `rgba(${rgba},${0.45 - i * 0.1})`;
+      ctx.fillRect(player.x + dir * (w / 2 + i * 9) - 6, y + h * 0.35 + (i - 1) * 9, 6, 2.5);
+    }
+  }
+  if (puActive(player, 'dash')) {
+    const flicker = 0.3 + Math.abs(Math.sin(time * 10)) * 0.5;
+    ctx.fillStyle = `rgba(255,146,43,${flicker})`;
+    ctx.beginPath();
+    ctx.arc(x + 9, y + h + 1, 3, 0, Math.PI * 2);
+    ctx.arc(x + w - 9, y + h + 1, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawPickupTexts(gs) {
+  const time = gs.time || 0;
+  (gs.recentPickups || []).forEach(entry => {
+    const def = getPowerup(entry.typeId);
+    const player = gs.players.find(candidate => candidate.id === entry.playerId);
+    if (!def || !player) return;
+    const q = 1 - Math.max(0, entry.until - time) / POWERUP_CONFIG.pickupTextLife;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, 1 - q);
+    ctx.font = 'bold 13px "Trebuchet MS", Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#fff';
+    const label = `${def.icon} ${def.name}!`;
+    const ty = player.y - playerLift(gs) - 62 - q * 26;
+    ctx.strokeText(label, player.x, ty);
+    ctx.fillStyle = def.color;
+    ctx.fillText(label, player.x, ty);
+    ctx.restore();
+  });
+}
+
+function drawGun(x, y, size, color) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(size / 24, size / 24);
+  ctx.fillStyle = color;
+  ctx.strokeStyle = '#222';
+  ctx.lineWidth = 2;
+  roundRectPath(ctx, -12, -5, 22, 9, 3);
+  ctx.fill();
+  ctx.stroke();
+  roundRectPath(ctx, -10, 3, 7, 12, 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawGroundWeapons(gs, time) {
+  (gs.weapons || []).forEach(ground => {
+    const def = getWarWeapon(ground.type);
+    if (!def) return;
+    const bob = Math.sin(time * 3 + ground.id * 1.3) * 4;
+    ctx.save();
+    ctx.globalAlpha = 0.3 + Math.sin(time * 4 + ground.id) * 0.15;
+    ctx.beginPath();
+    ctx.arc(ground.x, ground.y + bob, 20, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.restore();
+    drawGun(ground.x, ground.y + bob, 26, def.color);
+    const pips = Math.min(def.ammo, 10);
+    for (let i = 0; i < pips; i++) {
+      ctx.fillStyle = '#ffd43b';
+      ctx.beginPath();
+      ctx.arc(ground.x - ((pips - 1) * 5) / 2 + i * 5, ground.y + bob + 16, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+}
+
+function drawBullets(gs) {
+  (gs.bullets || []).forEach(bullet => {
+    ctx.save();
+    ctx.translate(bullet.x, bullet.y);
+    if (bullet.vx < 0) ctx.scale(-1, 1);
+    ctx.fillStyle = bullet.color || '#ffe066';
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 1;
+    roundRectPath(ctx, -9, -2.5, 18, 5, 2.5);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(6, 0, 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+}
+
+function drawWarGear(player, time) {
+  const gs = state.gameState;
+  const bob = Math.sin(time * 4) * 3;
+  if (player.weapon && !gs.warFists) {
+    const def = getWarWeapon(player.weapon);
+    if (def) {
+      drawGun(player.x + (player.facing || 1) * 10, player.y - PLAYER_HEIGHT - 20 + bob, 20, def.color);
+    }
+  } else {
+    ctx.save();
+    ctx.fillStyle = player.color;
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(player.x, player.y - PLAYER_HEIGHT - 20 + bob, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(player.x, player.y - PLAYER_HEIGHT - 20 + bob, 4.5, Math.PI, Math.PI * 1.9);
+    ctx.stroke();
+    ctx.restore();
+  }
+  const pips = Math.min(player.ammo || 0, 12);
+  for (let i = 0; i < pips; i++) {
+    ctx.fillStyle = '#ffd43b';
+    roundRectPath(ctx, player.x - ((pips - 1) * 6) / 2 + i * 6 - 2, player.y + 11, 4, 7, 1.5);
+    ctx.fill();
+  }
+}
+
+function drawSwingFx(player, w, h) {
+  const total = WAR_FIST_SWING || 0.22;
+  const q = Math.max(0, (player.swingTime || 0) / total);
+  if (q <= 0) return;
+  const dir = player.facing || 1;
+  const p = 1 - q;
+  const thrust = Math.sin(p * Math.PI);
+  const cx = player.x + dir * (w / 2 + 10 + thrust * 26);
+  const cy = player.y - h * 0.55 - thrust * 5;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, q * 2.2);
+  if (thrust > 0.82) {
+    ctx.strokeStyle = 'rgba(255,255,255,' + (((thrust - 0.82) / 0.18) * 0.85).toFixed(3) + ')';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 12 + (thrust - 0.82) * 70, 0, Math.PI * 2);
+    ctx.stroke();
+    for (let i = 0; i < 6; i++) {
+      const ang = (i / 6) * Math.PI * 2;
+      const r1 = 14 + (thrust - 0.82) * 55;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1);
+      ctx.lineTo(cx + Math.cos(ang) * (r1 + 7), cy + Math.sin(ang) * (r1 + 7));
+      ctx.stroke();
+    }
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 3; i++) {
+    const ly = cy - 7 + i * 7;
+    const back = 14 + i * 8 + thrust * 10;
+    ctx.beginPath();
+    ctx.moveTo(cx - dir * back, ly);
+    ctx.lineTo(cx - dir * (back + 12), ly);
+    ctx.stroke();
+  }
+  const size = 8 + thrust * 4;
+  ctx.fillStyle = player.color;
+  ctx.strokeStyle = '#222';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.arc(cx, cy, size, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(cx, cy, size * 0.55, Math.PI, Math.PI * 1.9);
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -363,6 +677,7 @@ function drawEgg(x, y, w, h) {
 }
 
 function drawEggScores(gs) {
+  const time = gs.time || 0;
   const corners = [
     { x: 12, y: 12, align: 'left' },
     { x: 1068, y: 12, align: 'right' },
@@ -386,7 +701,8 @@ function drawEggScores(gs) {
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     roundRectPath(ctx, boxX, boxY, boxW, boxH, 10);
     ctx.fill();
-    ctx.strokeStyle = player.color;
+    const doubled = puActive(player, 'double');
+    ctx.strokeStyle = doubled && Math.floor(time * 6) % 2 === 0 ? '#ffd23f' : player.color;
     ctx.lineWidth = 3;
     roundRectPath(ctx, boxX, boxY, boxW, boxH, 10);
     ctx.stroke();
@@ -400,6 +716,9 @@ function drawEggScores(gs) {
     ctx.strokeText(player.nickname, boxX + boxW / 2, nameY);
     ctx.fillStyle = player.color;
     ctx.fillText(player.nickname, boxX + boxW / 2, nameY);
+    if (doubled) {
+      ctx.fillStyle = Math.floor(time * 6) % 2 === 0 ? '#ffd23f' : '#ffffff';
+    }
 
     ctx.font = '14px "Press Start 2P", "Trebuchet MS", monospace';
     const scoreY = boxY + boxH - 7;
@@ -438,10 +757,20 @@ function drawDashIndicator(player, time) {
   ctx.lineWidth = 1;
   roundRectPath(ctx, cx - barW / 2, cy, barW, barH, 2);
   ctx.stroke();
+
+  if (puActive(player, 'dash')) {
+    const glow = 0.65 + Math.sin(time * 8) * 0.35;
+    ctx.globalAlpha = glow;
+    ctx.strokeStyle = '#ffd23f';
+    ctx.lineWidth = 3;
+    roundRectPath(ctx, cx - barW / 2 - 3, cy - 3, barW + 6, barH + 6, 5);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
 }
 
 function drawHearts(player) {
-  const total = RUN_LIVES;
+  const total = Math.max(RUN_LIVES, player.lives || 0);
   const cx = player.x;
   const cy = player.y + 26;
   const r = 4.5;
@@ -605,7 +934,7 @@ function drawStats() {
   const ping = gs && gs.t ? Math.max(0, Date.now() - gs.t) : 0;
   const color = getFpsColor(me.id);
 
-  ctx.font = 'bold 11px Consolas, monospace';
+  ctx.font = 'bold 14px Consolas, monospace';
   if (!statsBoxW) {
     statsBoxW = Math.ceil(Math.max(
       ctx.measureText('FPS 999').width,
@@ -614,9 +943,9 @@ function drawStats() {
 
   const lines = [`FPS ${fpsDisplay}`, `Ping ${ping}ms`];
 
-  const padX = 14;
+  const padX = 16;
   const boxW = statsBoxW + padX * 2;
-  const boxH = 42;
+  const boxH = 54;
   const boxY = gs && gs.mode === 'egg' ? 66 : 16;
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
   roundRectPath(ctx, 10, boxY, boxW, boxH, 8);
@@ -630,7 +959,7 @@ function drawStats() {
   ctx.lineWidth = 3;
   ctx.strokeStyle = '#fff';
   lines.forEach((line, index) => {
-    const ty = boxY + 17 + index * 19;
+    const ty = boxY + 22 + index * 24;
     ctx.strokeText(line, 10 + padX, ty);
     ctx.fillStyle = color;
     ctx.fillText(line, 10 + padX, ty);

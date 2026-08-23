@@ -1,4 +1,5 @@
 import { state, saveLocalPlayers } from './state.js';
+import { netRelay } from './net.js';
 import {
   STORAGE_KEY,
   INPUT_PREFIX,
@@ -34,7 +35,9 @@ export function loadRooms() {
 
 export function saveRooms() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.rooms));
+    const raw = JSON.stringify(state.rooms);
+    localStorage.setItem(STORAGE_KEY, raw);
+    netRelay(STORAGE_KEY, raw);
   } catch (error) {
     console.warn('Não foi possível salvar as salas (armazenamento cheio?):', error);
   }
@@ -70,12 +73,15 @@ export function readGameState() {
 export function publishGameState() {
   if (!state.gameState || !state.myRoomCode) return;
   try {
-    localStorage.setItem(gameKey(state.myRoomCode), JSON.stringify(state.gameState));
+    const raw = JSON.stringify(state.gameState);
+    localStorage.setItem(gameKey(state.myRoomCode), raw);
+    netRelay(gameKey(state.myRoomCode), raw);
   } catch (error) {}
 }
 
 export function writePlayerInput(playerId, data) {
   localStorage.setItem(INPUT_PREFIX + playerId, data);
+  netRelay(INPUT_PREFIX + playerId, data);
 }
 
 export function readPlayerInput(playerId) {
@@ -84,6 +90,7 @@ export function readPlayerInput(playerId) {
 
 export function removePlayerInput(playerId) {
   localStorage.removeItem(INPUT_PREFIX + playerId);
+  netRelay(INPUT_PREFIX + playerId, null);
 }
 
 function deviceKey(prefix, playerId) {

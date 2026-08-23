@@ -1,4 +1,4 @@
-import { GAME_MODES, DEFAULT_ROOM_SETTINGS, PLAYER_WIDTH, PLAYER_HEIGHT, SPAWN_COLORS, MAX_MAP_PLATFORMS, uuid } from './constants.js';
+import { GAME_MODES, DEFAULT_ROOM_SETTINGS, PLAYER_WIDTH, PLAYER_HEIGHT, SPAWN_COLORS, MAX_MAP_PLATFORMS, uuid, TOUCH_ASSIGNMENT } from './constants.js';
 import { getPlayableMaps, playableMapKey } from './maps.js';
 import { state, getMyPlayer, isHost, saveLocalPlayers } from './state.js';
 import * as rooms from './rooms.js';
@@ -25,11 +25,13 @@ import {
   saveRooms
 } from './storage.js';
 import { connectedGamepads, getEffectiveControls, gamepadName } from './input.js';
+import * as net from './net.js';
 import { spawnConfetti } from './effects.js';
-import { playSound, playClick, setMusicVolume as applyMusicVolume, setSfxVolume as applySfxVolume } from './audio.js';
+import { playSound, playClick, playPop, setMusicVolume as applyMusicVolume, setSfxVolume as applySfxVolume } from './audio.js';
 import { HATS, getHatById, drawHatPreview } from './hats.js';
 import { openLayoutEditor, closeLayoutEditor, updateTouchVisibility } from './touch.js';
 import { updateDonateVisibility } from './donate.js';
+import { initColorPickers } from './colorPicker.js';
 import {
   getAllCosmetics,
   getCosmeticById,
@@ -112,6 +114,7 @@ export const refs = {
   confirmOkBtn: $('confirmOkBtn'),
   confirmCancelBtn: $('confirmCancelBtn'),
   gameQuitBtn: $('gameQuitBtn'),
+  fullscreenBtn: $('fullscreenBtn'),
   countdownOverlay: $('countdownOverlay'),
   countdownNumber: $('countdownNumber'),
   countdownCancelBtn: $('countdownCancelBtn'),
@@ -172,8 +175,10 @@ export const refs = {
   lobbyMapsModeName: $('lobbyMapsModeName'),
   lobbyNativeMaps: $('lobbyNativeMaps'),
   lobbyCustomMaps: $('lobbyCustomMaps'),
+  selectAllMapsBtn: $('selectAllMapsBtn'),
   powerupFreqInput: $('powerupFreqInput'),
   powerupFreqValue: $('powerupFreqValue'),
+  hostConfigWarning: $('hostConfigWarning'),
   playerSpeedInput: $('playerSpeedInput'),
   playerSpeedValue: $('playerSpeedValue'),
   scoreLimitInput: $('scoreLimitInput'),
@@ -195,14 +200,29 @@ let rebindingAction = null;
 let countdownTimer = null;
 let countdownActive = false;
 const uiFocusMap = new Map();
+const uiFocusStamp = new Map(); // ordem de interação: quem interagiu por último pinta o seletor
+let uiFocusSeq = 0;
 let settingsOpenByController = false;
 let renderedPlayerIds = new Set();
 let padConnectIndex = -1;
+const KEYBOARD_CONNECT = -2; // tela de atribuição aberta para o TECLADO
 let lobbyMapImportInput = null;
 
 const FOCUS_SELECTOR = 'input:not([type="hidden"]), select, button, .hat-option';
 
 export function initUi() {
+  initColorPickers();
+  // Trava a rolagem do fundo enquanto qualquer overlay estiver aberta
+  const syncBodyModalOpen = () => {
+    document.body.classList.toggle('modal-open', !!document.querySelector(
+      '.modal:not(.hidden), .hat-popup:not(.hidden), .touch-layout-editor:not(.hidden), .settings-panel.open'
+    ));
+  };
+  const overlayObserver = new MutationObserver(syncBodyModalOpen);
+  document.querySelectorAll('.modal, .hat-popup, .touch-layout-editor, .settings-panel').forEach(el => {
+    overlayObserver.observe(el, { attributes: true, attributeFilter: ['class'] });
+  });
+  syncBodyModalOpen();
   refs.settingsGearBtn.addEventListener('click', () => {
     const wasOpen = refs.settingsPanel.classList.contains('open');
     toggleSettingsPanel();
@@ -321,6 +341,15 @@ export function initUi() {
   bindRoomRule(refs.playerSpeedInput, refs.playerSpeedValue, '%', refs.resetPlayerSpeedBtn, 'playerSpeed');
   bindRoomRule(refs.scoreLimitInput, refs.scoreLimitValue, ' pts', refs.resetScoreLimitBtn, 'scoreLimit');
 
+  const puLockedRow = refs.powerupFreqInput && refs.powerupFreqInput.closest('.lobby-rule-line');
+  if (puLockedRow) {
+    puLockedRow.addEventListener('pointerdown', () => {
+      if (puLockedRow.classList.contains('pu-locked')) {
+        showHostConfigWarning('Power-ups não funcionam neste modo!');
+      }
+    });
+  }
+
   if (refs.hostConfigBtn) {
     refs.hostConfigBtn.addEventListener('click', () => {
       playClick();
@@ -331,6 +360,17 @@ export function initUi() {
     refs.hostConfigCloseBtn.addEventListener('click', () => {
       closeHostConfig();
       playClick();
+    });
+  }
+  if (refs.selectAllMapsBtn) {
+    refs.selectAllMapsBtn.addEventListener('click', () => {
+      if (!isHost()) return;
+      const live = state.currentRoom;
+      if (!live) return;
+      live.mapSelection = [];
+      saveRooms();
+      renderLobbyMaps();
+      renderUiFocuses();
     });
   }
   if (refs.hostConfigPanel) {
@@ -346,7 +386,23 @@ export function initUi() {
 
   if (refs.touchEnabledCheckbox) {
     refs.touchEnabledCheckbox.addEventListener('change', () => {
-      saveTouchEnabled(refs.touchEnabledCheckbox.checked);
+      const enabled = refs.touchEnabledCheckbox.checked;
+      saveTouchEnabled(enabled);
+      const room = state.currentRoom;
+      let changed = false;
+      if (!enabled && room) {
+        room.players.forEach(player => {
+          if (getGamepadAssignment(player.id) === TOUCH_ASSIGNMENT) {
+            saveGamepadAssignment(player.id, -1);
+            changed = true;
+          }
+        });
+      }
+      if (changed) {
+        renderLobby();
+      } else {
+        refreshControlAssignments();
+      }
     });
   }
   if (refs.touchStyleSelect) {
@@ -735,6 +791,18 @@ function getUiActivePlayer(pid) {
   return room.players.find(player => player.id === id) || null;
 }
 
+function getKbActivePlayer() {
+  const room = state.currentRoom;
+  if (!room) return null;
+  const ids = state.localPlayerIds || [];
+  if (ids.length === 0) return null;
+  for (const id of ids) {
+    const assigned = getGamepadAssignment(id);
+    if (!(assigned >= 0)) return room.players.find(player => player.id === id) || null;
+  }
+  return undefined;
+}
+
 function focusKey(pid) {
   return pid || 'kb';
 }
@@ -749,6 +817,7 @@ function clearUiFocuses() {
     el.style.removeProperty('--focus-color');
   });
   uiFocusMap.clear();
+  uiFocusStamp.clear();
 }
 
 function renderUiFocuses() {
@@ -757,7 +826,13 @@ function renderUiFocuses() {
   uiFocusMap.forEach((index, key) => {
     if (index < 0 || index >= list.length) return;
     const el = list[index];
-    if (el) focused.add(el);
+    if (!el) return;
+    const active = key === 'kb' ? getKbActivePlayer() : getUiActivePlayer(key);
+    if (active === undefined) {
+      uiFocusMap.delete(key);
+      return;
+    }
+    focused.add(el);
   });
   [...document.querySelectorAll('.ui-focus')].forEach(el => {
     if (!focused.has(el)) {
@@ -772,10 +847,16 @@ function renderUiFocuses() {
       el.style.removeProperty('--focus-color');
     }
   });
+  const colorByEl = new Map();
   uiFocusMap.forEach((index, key) => {
     const el = index >= 0 && index < list.length ? list[index] : null;
     if (!el || !focused.has(el)) return;
-    const active = getUiActivePlayer(key === 'kb' ? null : key);
+    const stamp = uiFocusStamp.get(key) || 0;
+    const prev = colorByEl.get(el);
+    if (!prev || stamp >= prev.stamp) colorByEl.set(el, { stamp, key });
+  });
+  colorByEl.forEach(({ key }, el) => {
+    const active = key === 'kb' ? getKbActivePlayer() : getUiActivePlayer(key);
     if (active) el.style.setProperty('--focus-color', active.color);
   });
 }
@@ -783,6 +864,7 @@ function renderUiFocuses() {
 function setUiFocusIndex(index, pid) {
   const list = getFocusables();
   const key = focusKey(pid);
+  uiFocusStamp.set(key, ++uiFocusSeq);
   if (list.length === 0) {
     uiFocusMap.set(key, -1);
     renderUiFocuses();
@@ -848,8 +930,8 @@ function moveCosmeticsModalFocus(target, dx, dy, pid, list, index) {
     if (dy > 0) {
       const idx = renameBtns[boxIdx] ? list.indexOf(renameBtns[boxIdx]) : -1;
       if (idx >= 0) setUiFocusIndex(idx, pid);
-    } else if (dy < 0 && boxIdx === 0) {
-      const idx = list.indexOf(refs.cosmeticsCreateImgBtn);
+    } else if (dy < 0 && boxIdx < 4) {
+      const idx = list.indexOf(refs.cosmeticsModalCloseBtn);
       if (idx >= 0) setUiFocusIndex(idx, pid);
     } else if (dx !== 0) {
       const next = boxIdx + dx;
@@ -922,7 +1004,10 @@ function moveCosmeticsModalFocus(target, dx, dy, pid, list, index) {
   }
 
   if (target === refs.cosmeticsModalCloseBtn) {
-    if (dy < 0 && cosmeticBoxes.length > 0) {
+    if (dy > 0) {
+      const idx = list.indexOf(refs.cosmeticsCreateImgBtn);
+      if (idx >= 0) setUiFocusIndex(idx, pid);
+    } else if (dy < 0 && cosmeticBoxes.length > 0) {
       const idx = list.indexOf(cosmeticBoxes[0]);
       if (idx >= 0) setUiFocusIndex(idx, pid);
     }
@@ -1169,6 +1254,14 @@ export function uiBack(pid) {
     setUiFocusIndex(0, pid);
     return;
   }
+  if (state.currentScreen === 'lobby' && refs.startGameBtn && !refs.startGameBtn.classList.contains('hidden')) {
+    const list = getFocusables();
+    const idx = list.indexOf(refs.startGameBtn);
+    if (idx >= 0) {
+      setUiFocusIndex(idx, pid);
+      return;
+    }
+  }
   setUiFocusIndex(0, pid);
 }
 
@@ -1288,7 +1381,16 @@ export function getPadConnectIndex() {
 
 export function showPadConnect(padIndex) {
   padConnectIndex = padIndex;
-  refs.padModalText.textContent = `Controle (Pad ${padIndex + 1}) detectado. Atribua a um jogador desta tela ou crie um novo.`;
+  openPadAssignModal(`Controle (Pad ${padIndex + 1}) detectado. Atribua a um jogador desta tela ou crie um novo.`);
+}
+
+export function showKeyboardConnect() {
+  padConnectIndex = KEYBOARD_CONNECT;
+  openPadAssignModal('Teclado detectado. Atribua a um jogador desta tela ou crie um novo.');
+}
+
+function openPadAssignModal(text) {
+  refs.padModalText.textContent = text;
   refs.padNewNameRow.classList.add('hidden');
   refs.padNewNameInput.value = '';
   refs.padModalNotice.textContent = '';
@@ -1307,8 +1409,8 @@ export function hidePadConnect() {
 
 export function assignPadToPlayer(playerId) {
   const index = padConnectIndex;
-  if (index < 0) return;
-  saveGamepadAssignment(playerId, index);
+  if (index === -1) return;
+  saveGamepadAssignment(playerId, index === KEYBOARD_CONNECT ? -1 : index);
   if (!state.localPlayerIds.includes(playerId)) {
     saveLocalPlayers([...state.localPlayerIds, playerId]);
   }
@@ -1345,7 +1447,7 @@ function populatePadAssignList() {
 
 function handlePadCreate() {
   const index = padConnectIndex;
-  if (index < 0) return;
+  if (index === -1) return;
   const nickname = refs.padNewNameInput.value.trim();
   if (!nickname) {
     refs.padModalNotice.textContent = 'Informe um apelido.';
@@ -1356,7 +1458,7 @@ function handlePadCreate() {
     refs.padModalNotice.textContent = result.error;
     return;
   }
-  saveGamepadAssignment(result.player.id, index);
+  saveGamepadAssignment(result.player.id, index === KEYBOARD_CONNECT ? -1 : index);
   hidePadConnect();
   spawnConfetti(30);
   renderLobby();
@@ -1365,7 +1467,9 @@ function handlePadCreate() {
 export function openInviteModal() {
   const room = state.currentRoom;
   if (!room) return;
-  refs.inviteLinkInput.value = `${location.origin}${location.pathname}?room=${room.code}`;
+  const base = net.netServerBase();
+  const srvParam = base ? `&srv=${encodeURIComponent(base)}` : '';
+  refs.inviteLinkInput.value = `${location.origin}${location.pathname}?room=${room.code}${srvParam}`;
   clearUiFocuses();
   refs.inviteModal.classList.remove('hidden');
 }
@@ -1381,6 +1485,17 @@ function updateHostConfigHint() {
   name.style.color = host.color;
   name.textContent = host.nickname;
   refs.hostConfigHostName.appendChild(name);
+}
+
+let hostConfigWarningTimer = null;
+
+function showHostConfigWarning(text) {
+  const el = refs.hostConfigWarning;
+  if (!el) return;
+  el.textContent = text;
+  el.classList.remove('hidden');
+  if (hostConfigWarningTimer) clearTimeout(hostConfigWarningTimer);
+  hostConfigWarningTimer = setTimeout(() => el.classList.add('hidden'), 2600);
 }
 
 export function openHostConfig() {
@@ -1444,9 +1559,10 @@ function applyModeTheme(modeId) {
 }
 
 const HOW_TO_TEXT = {
-  bomb: 'Encoste em outro jogador para passar a bomba. Após 15 segundos ela explode em quem a segura. Use o dash para escapar. Cada jogador pode escolher seu controle (ou teclado) na lista de jogadores acima.',
-  egg: 'Um jogador começa com o ovo: cada 0,2s com ele vale 1 ponto — encoste em quem o segura para roubar! A cada 10 segundos, quem tiver MENOS pontos explode. O último vivo ganha mais pontos no placar.',
-  run: 'Um jogador é o MONSTRO! Corra e sobreviva aos 12 segundos — cada encostão do monstro custa um coração (você tem 2). Quem sobreviver ganha mais pontos; o monstro ganha mais quanto mais jogadores eliminar.',
+  bomb: 'Encoste em outro jogador para passar a bomba. Após 15 segundos ela explode em quem a segura. Use o dash para escapar. Pegue as bolhas rosas "?" para ganhar poderes! Cada jogador pode escolher seu controle (ou teclado) na lista de jogadores acima.',
+  egg: 'Um jogador começa com o ovo: cada 0,2s com ele vale 1 ponto — encoste em quem o segura para roubar! A cada 10 segundos, quem tiver MENOS pontos explode. O último vivo ganha mais pontos no placar. Bolhas rosas "?" dão poderes!',
+  run: 'Um jogador é o MONSTRO! Corra e sobreviva aos 12 segundos — cada encostão do monstro custa um coração (você tem 2). Quem sobreviver ganha mais pontos; o monstro ganha mais quanto mais jogadores eliminar. Bolhas rosas "?" dão poderes!',
+  war: 'GUERRA! Armas espalhadas pelo mapa — encoste nelas para pegar (cada uma tem balas e dano próprios). Use o botão para atirar na direção que você está olhando. Quando acabarem as armas e as balas, todo mundo parte para a PORRADA! Cada jogador tem 3 vidas; o último de pé vence.',
   rhythm: 'Pressione a direção das setas na ordem mostrada mais rápido que os outros. Após a sequência, o jogador com menos pontos sofre a consequência... Cada sequência fica mais rápida e longa! No teclado use: W, A, S, D ou as setas (CIMA, BAIXO, ESQUERDA, DIREITA). No controle use: O analógico ou as setas direcionais.'
 };
 
@@ -1471,12 +1587,19 @@ function renderLobbyModes() {
     chip.addEventListener('click', () => {
       const live = state.currentRoom;
       if (!isHost() || !live || live.mode === mode.id) return;
+      playPop();
       live.mode = mode.id;
       saveRooms();
       renderLobbyModes();
       renderLobbyMaps();
+      renderLobbyRules();
       renderUiFocuses();
-      playClick();
+      const newChip = refs.lobbyModeList && refs.lobbyModeList.querySelector('.lobby-mode-chip.selected');
+      if (newChip) {
+        newChip.classList.remove('mode-chip-pop');
+        void newChip.offsetWidth;
+        newChip.classList.add('mode-chip-pop');
+      }
     });
     refs.lobbyModeList.appendChild(chip);
   });
@@ -1589,6 +1712,7 @@ function renderLobbyMaps() {
   buildLobbyMapGrid(refs.lobbyNativeMaps, natives, map => playableMapKey(map, natives.indexOf(map)), isSelected, toggle);
   buildLobbyMapGrid(refs.lobbyCustomMaps, customs, map => map.customId, isSelected, toggle);
   appendCustomImportButton();
+  if (refs.selectAllMapsBtn) refs.selectAllMapsBtn.disabled = !isHost();
 }
 
 function appendCustomImportButton() {
@@ -1709,7 +1833,11 @@ function renderLobbyRules() {
   refs.playerSpeedValue.textContent = `${settings.playerSpeed}%`;
   refs.scoreLimitInput.value = settings.scoreLimit;
   refs.scoreLimitValue.textContent = `${settings.scoreLimit} pts`;
-  refs.powerupFreqInput.disabled = !host;
+  const puEnabled = ['bomb', 'egg', 'run'].includes(room.mode || 'bomb');
+  refs.powerupFreqInput.disabled = !host || !puEnabled;
+  refs.resetPowerupFreqBtn.disabled = !host || !puEnabled;
+  const puRow = refs.powerupFreqInput.closest('.lobby-rule-line');
+  if (puRow) puRow.classList.toggle('pu-locked', host && !puEnabled);
   refs.playerSpeedInput.disabled = !host;
   refs.scoreLimitInput.disabled = !host;
   refs.resetPowerupFreqBtn.disabled = !host;
@@ -1722,9 +1850,8 @@ function primeLobbyFocus() {
   const idx = list.indexOf(refs.startGameBtn);
   if (idx < 0) return;
   uiFocusMap.set('kb', idx);
-  for (let i = 0; i < 4; i++) {
-    const assigned = getGamepadAssignment(i);
-    if (assigned) uiFocusMap.set(assigned, idx);
+  for (const id of state.localPlayerIds || []) {
+    uiFocusMap.set(id, idx);
   }
   renderUiFocuses();
 }
@@ -1793,37 +1920,38 @@ export function updateGamepadStatus() {
   }
 }
 
-function padTakenByOther(index, exceptPlayerId) {
-  const room = state.currentRoom;
-  if (!room) return null;
-  return room.players.find(other =>
-    other.id !== exceptPlayerId && getGamepadAssignment(other.id) === index
-  ) || null;
-}
-
 function buildControlAssign(player, pads, canAssign) {
   const ctrlSelect = document.createElement('select');
   ctrlSelect.className = 'control-assign';
   ctrlSelect.title = canAssign ? 'Escolha seu controle' : 'Controle deste jogador';
   const assigned = getGamepadAssignment(player.id);
   const padConnected = assigned >= 0 && pads.some(pad => pad.index === assigned);
+  const touchOn = getTouchEnabled();
   const keyboardOption = document.createElement('option');
   keyboardOption.value = '-1';
   keyboardOption.textContent = 'Teclado';
   ctrlSelect.appendChild(keyboardOption);
+  if (touchOn) {
+    const touchOption = document.createElement('option');
+    touchOption.value = String(TOUCH_ASSIGNMENT);
+    touchOption.textContent = '📱 Toque (Móvel)';
+    ctrlSelect.appendChild(touchOption);
+  }
   pads.forEach(pad => {
     const opt = document.createElement('option');
     opt.value = String(pad.index);
-    const takenBy = padTakenByOther(pad.index, player.id);
-    opt.textContent = `Pad ${pad.index + 1} · ${gamepadName(pad, pad.index)} · ${takenBy ? `em uso por ${takenBy.nickname}` : 'livre'}`;
+    opt.textContent = `Pad ${pad.index + 1} · ${gamepadName(pad, pad.index)}`;
     ctrlSelect.appendChild(opt);
   });
-  ctrlSelect.value = padConnected ? String(assigned) : '-1';
+  ctrlSelect.value =
+    assigned === TOUCH_ASSIGNMENT && touchOn ? String(TOUCH_ASSIGNMENT)
+      : padConnected ? String(assigned) : '-1';
   ctrlSelect.disabled = !canAssign;
   ctrlSelect.addEventListener('change', () => {
     const chosen = Number(ctrlSelect.value);
     const room = state.currentRoom;
-    if (room && chosen >= 0) {
+    const canBeTaken = chosen >= 0 || chosen === TOUCH_ASSIGNMENT;
+    if (room && canBeTaken) {
       const takenBy = room.players.find(other =>
         other.id !== player.id && getGamepadAssignment(other.id) === chosen
       );
@@ -1914,7 +2042,7 @@ export function renderLobby() {
   }
   if (refs.inviteBtn) refs.inviteBtn.classList.remove('hidden');
   if (refs.hostConfigBtn) refs.hostConfigBtn.classList.toggle('hidden', !isHost());
-  if (padConnectIndex >= 0 && !refs.padModal.classList.contains('hidden')) populatePadAssignList();
+  if (padConnectIndex !== -1 && !refs.padModal.classList.contains('hidden')) populatePadAssignList();
 
   updateGamepadStatus();
 
@@ -2042,14 +2170,15 @@ export function formatControls(playerId) {
   if (gs && gs.mode === 'rhythm') {
     return 'Ritmo: W/A/S/D ou setas ← ↑ ↓ →';
   }
+  const actionName = gs && gs.mode === 'war' ? 'Tiro/Soco' : 'Dash';
   const ctrl = getEffectiveControls(playerId);
-  if (!ctrl) return 'Mover: A/D, Pular: Espaço, Dash: Shift';
+  if (!ctrl) return `Mover: A/D, Pular: Espaço, ${actionName}: Shift`;
   const labelKey = key => {
     if (key === ' ') return 'Espaço';
     if (/^f\d{1,2}$/.test(key)) return key.toUpperCase();
     return key.charAt(0).toUpperCase() + key.slice(1);
   };
-  return `Mover: ${labelKey(ctrl.left)}/${labelKey(ctrl.right)}, Pular: ${labelKey(ctrl.jump)}, Dash: ${labelKey(ctrl.dash)}`;
+  return `Mover: ${labelKey(ctrl.left)}/${labelKey(ctrl.right)}, Pular: ${labelKey(ctrl.jump)}, ${actionName}: ${labelKey(ctrl.dash)}`;
 }
 
 export function formatGamepadControls() {

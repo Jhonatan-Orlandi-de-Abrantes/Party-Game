@@ -71,6 +71,25 @@ body {
 #screen-lobby.mode-egg { --mode-color: #ffd23f; }
 #screen-lobby.mode-run { --mode-color: #ff6b6b; }
 #screen-lobby.mode-rhythm { --mode-color: #9b5de5; }
+#screen-lobby.mode-war { --mode-color: #2b8a3e; }
+
+/* ---- Aviso vermelho no painel de regras + linha bloqueada ---- */
+.host-config-warning {
+  background: #ffe3e3;
+  color: #c92a2a;
+  border: 2px solid #c92a2a;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-weight: bold;
+  font-size: 13px;
+  text-align: center;
+  margin-bottom: 10px;
+}
+.lobby-rule-line.pu-locked {
+  opacity: 0.45;
+  filter: grayscale(0.5);
+  cursor: not-allowed;
+}
 #screen-lobby .lobby-topbar {
   border-bottom: 4px solid var(--mode-color);
   padding-bottom: 10px;
@@ -203,10 +222,22 @@ body {
   background: var(--chip-color);
   box-shadow: 3px 3px 0 #222, inset 0 0 0 3px rgba(255,255,255,.55);
 }
+@keyframes modeChipPop {
+  0% { transform: scale(.6) rotate(-8deg); }
+  45% { transform: scale(1.18) rotate(5deg); }
+  70% { transform: scale(.94) rotate(-2deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+.mode-chip-pop { animation: modeChipPop .5s cubic-bezier(.34,1.56,.64,1); }
 .lobby-maps-columns {
   display: flex;
   gap: 28px;
   flex-wrap: wrap;
+}
+.lobby-maps-select-all {
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
 }
 .lobby-maps-col {
   flex: 1 1 300px;
@@ -882,6 +913,11 @@ input[type="range"]::-moz-range-thumb {
 .game-quit-btn:hover { box-shadow: 4px 4px 0 #222; }
 .game-quit-btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #222; }
 
+.fullscreen-toggle {
+  right: 72px;
+  background: #4dabf7;
+}
+
 .countdown-overlay {
   position: fixed;
   inset: 0;
@@ -1155,6 +1191,37 @@ input[type="range"]::-moz-range-thumb {
 .touch-btn-action:hover { transform: translate(-50%, -50%); box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.15) !important; }
 .touch-btn-action:active { transform: translate(-50%, -50%); box-shadow: none !important; }
 .touch-btn-action span { pointer-events: none; }
+
+.touch-rhythm-row {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 14px;
+  pointer-events: auto;
+}
+.touch-rhythm-btn {
+  position: static;
+  transform: none;
+  width: 62px;
+  height: 62px;
+  border-radius: 14px;
+  background: rgba(34, 34, 34, 0.45);
+  font-size: 1.4rem;
+}
+.touch-rhythm-btn,
+.touch-rhythm-btn:hover,
+.touch-rhythm-btn:active {
+  transition: none;
+}
+.touch-rhythm-btn:hover {
+  transform: none;
+  background: rgba(34, 34, 34, 0.45);
+  color: #fff;
+  box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.15);
+}
+.touch-rhythm-btn:active { transform: none; background: rgba(255, 210, 63, 0.9); color: #222; box-shadow: none !important; }
 .touch-analog {
   position: absolute;
   width: 110px;
@@ -1555,6 +1622,7 @@ input[type="range"]::-moz-range-thumb {
   flex-wrap: wrap;
   margin-bottom: 14px;
 }
+.map-editor-actions-row { margin-top: -6px; }
 .map-editor-topbar-row > button { width: auto; white-space: nowrap; }
 .map-editor-topbar-actions {
   display: flex;
@@ -1681,6 +1749,7 @@ input[type="range"]::-moz-range-thumb {
 }
 .map-saved-list li {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
@@ -1690,20 +1759,30 @@ input[type="range"]::-moz-range-thumb {
 }
 .map-saved-list li.current { background: #fff9db; }
 .map-saved-name {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   font-weight: 800;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .map-saved-mode {
-  font-size: 0.72rem;
-  font-weight: 800;
-  padding: 2px 6px;
-  background: #e7f5ff;
-  border: 1px solid #74c0fc;
-  border-radius: 6px;
-  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.map-saved-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  font-size: .8rem;
+  line-height: 1;
+  border-radius: 50%;
+  border: 2px solid #222;
+  box-shadow: 2px 2px 0 #222, inset 0 0 0 2px rgba(255,255,255,.55);
 }
 .map-saved-list button {
   width: auto;
@@ -1714,4 +1793,136 @@ input[type="range"]::-moz-range-thumb {
 @media (max-width: 900px) {
   .map-editor-main { flex-direction: column; }
   .map-editor-sidebar { flex: 1 1 auto; max-width: none; width: 100%; }
+}
+
+/* ============================================================
+   📱 RESPONSIVIDADE MOBILE — caber tudo em telas pequenas
+   Vale para RETRATO (largura ≤720px) E para PAISAGEM
+   (altura ≤540px), cobrindo celulares nas duas orientações
+   ============================================================ */
+@media (max-width: 720px), (max-height: 540px) {
+  /* Escala global: quase tudo usa rem, então reduzir a raiz
+     deixa menus, lobby e configurações menores de uma vez */
+  html { font-size: 14px; }
+  body { overflow-x: hidden; }
+
+  /* Com qualquer overlay aberta, a tela de TRÁS não rola */
+  body.modal-open { overflow: hidden; }
+
+  /* Modais e popups sempre DENTRO da tela (com rolagem interna no toque).
+     Repete as variantes com 2 classes para vencer a especificidade delas. */
+  .modal { padding: 10px; }
+  .modal-box,
+  .modal-box.host-config-box,
+  .modal-box.donate-modal-box,
+  .modal-box.cosmetics-modal-box,
+  .modal-box.cosmetics-position-box,
+  .modal-box.cosmetics-code-box {
+    width: auto;
+    max-width: calc(100vw - 20px);
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding: 14px;
+    box-shadow: 5px 5px 0 rgba(0, 0, 0, 0.18);
+  }
+  .modal-box img { max-width: 100%; height: auto; }
+  .hat-popup-box {
+    width: auto;
+    max-width: calc(100vw - 20px);
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding: 14px;
+  }
+  /* Listas internas também param o rolar de "vazar" pro fundo */
+  .cosmetics-list,
+  .host-config-box .lobby-maps-columns,
+  .settings-scroll {
+    overscroll-behavior: contain;
+  }
+  .touch-layout-editor { padding: 8px; }
+  .touch-layout-box {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+    max-height: calc(100dvh - 16px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding: 12px;
+  }
+  .results-box {
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
+    padding: 18px;
+    overscroll-behavior: contain;
+  }
+
+  /* Partida: header/HUD mais compactos */
+  #gameCanvas { border-width: 3px; }
+  .game-header { margin-bottom: 8px; }
+  .hud-panel { padding: 6px 10px; }
+  .status-line { font-size: 0.85rem; }
+
+  /* Botões de toque proporcionais */
+  .touch-btn { width: 54px; height: 54px; }
+  .touch-btn-action { width: 62px; height: 62px; font-size: 0.72rem; }
+  .touch-analog { width: 92px; height: 92px; }
+  .touch-rhythm-btn { width: 52px; height: 52px; font-size: 1.15rem; }
+  .touch-rhythm-row { gap: 10px; bottom: 12px; }
+}
+
+/* Celular DEITADO (paisagem): o canvas da partida nunca sai da tela */
+@media (max-height: 540px) {
+  #gameCanvas {
+    width: auto;
+    height: calc(100vh - 118px);
+    height: calc(100dvh - 118px);
+    max-width: 100%;
+    margin: 0 auto;
+  }
+  .game-header { margin-bottom: 4px; }
+  .hud-row { gap: 8px; margin-top: 6px; }
+  .hud-panel { flex: 1 1 140px; min-width: 140px; padding: 4px 8px; }
+  .hud-panel strong { font-size: 0.75rem; margin-bottom: 2px; }
+  .status-line { font-size: 0.72rem; margin-top: 2px; }
+}
+
+/* ============================================================
+   🎨 Seletor de cores próprio (grade de swatches, igual no PC
+   e no celular — substitui o seletor nativo do navegador)
+   ============================================================ */
+.color-picker-box { width: min(360px, calc(100vw - 20px)); }
+.color-picker-box h3 { margin-bottom: 4px; }
+.color-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 10px;
+  justify-items: center;
+  margin: 14px 0 16px;
+}
+.color-swatch {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 50%;
+  border: 3px solid #222;
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.25);
+}
+.color-swatch:hover { transform: scale(1.1); }
+.color-swatch.selected {
+  outline: 3px solid #222;
+  outline-offset: 3px;
+  transform: scale(1.08);
+}
+.color-picker-native {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }

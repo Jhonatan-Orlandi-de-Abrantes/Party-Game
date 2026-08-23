@@ -1,13 +1,32 @@
 import { state, getControlsForPlayer } from './state.js';
+import { TOUCH_ASSIGNMENT } from './constants.js';
 import { writePlayerInput, readPlayerInput, getGamepadAssignment, getCustomKeys } from './storage.js';
 
 const AXIS_DEADZONE = 0.4;
 
 const touchKeys = { left: false, right: false, jump: false, dash: false };
+const touchRhythm = { left: false, right: false, up: false, down: false };
 
 export function setTouchInput(action, active) {
   if (!(action in touchKeys)) return;
   touchKeys[action] = !!active;
+}
+
+export function setRhythmTouch(dir, active) {
+  if (!(dir in touchRhythm)) return;
+  touchRhythm[dir] = !!active;
+}
+
+// Jogador local que recebe o toque: o que tiver "Toque (Móvel)" atribuído;
+// sem atribuição explícita, mantém o comportamento antigo (meu jogador).
+export function getTouchAssignedPlayerId() {
+  const ids = state.localPlayerIds && state.localPlayerIds.length
+    ? state.localPlayerIds
+    : (state.myPlayerId ? [state.myPlayerId] : []);
+  for (const id of ids) {
+    if (getGamepadAssignment(id) === TOUCH_ASSIGNMENT) return id;
+  }
+  return state.myPlayerId || null;
 }
 
 export function getEffectiveControls(playerId) {
@@ -75,6 +94,12 @@ export function readRhythmDirs(includeKeyboard, playerId) {
     dirs.up = dirs.up || gd.up;
     dirs.down = dirs.down || gd.down;
   }
+  if (playerId === getTouchAssignedPlayerId()) {
+    dirs.left = dirs.left || touchRhythm.left;
+    dirs.right = dirs.right || touchRhythm.right;
+    dirs.up = dirs.up || touchRhythm.up;
+    dirs.down = dirs.down || touchRhythm.down;
+  }
   return dirs;
 }
 
@@ -113,7 +138,7 @@ export function publishPlayerInput(playerId, includeKeyboard) {
     keys.jump = keys.jump || gp.jump;
     keys.dash = keys.dash || gp.dash;
   }
-  if (playerId === state.myPlayerId) {
+  if (playerId === getTouchAssignedPlayerId()) {
     keys.left = keys.left || touchKeys.left;
     keys.right = keys.right || touchKeys.right;
     keys.jump = keys.jump || touchKeys.jump;

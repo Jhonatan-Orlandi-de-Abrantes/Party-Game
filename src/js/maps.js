@@ -102,8 +102,8 @@ export function getPlayableMaps(requestedMode) {
   const accepts = entry => {
     const modes = mapModes(entry);
     if (!requestedMode || modes.includes(requestedMode)) return true;
-    // "Pegue o Ovo" e "CORRA!" usam os mesmos mapas do bomb clássico
-    if ((requestedMode === 'egg' || requestedMode === 'run') && modes.includes('bomb')) return true;
+    // "Pegue o Ovo", "CORRA!" e "GUERRA!" usam os mesmos mapas do bomb clássico
+    if ((requestedMode === 'egg' || requestedMode === 'run' || requestedMode === 'war') && modes.includes('bomb')) return true;
     return false;
   };
   const customs = loadCustomMaps()

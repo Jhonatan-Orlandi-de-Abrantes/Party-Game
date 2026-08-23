@@ -20,6 +20,19 @@ import {
   DASH_ACTIVE_TIME,
   TRAIL_LIFE,
   DEFAULT_ROOM_SETTINGS,
+  POWERUP_CONFIG,
+  POWERUPS,
+  getPowerup,
+  WAR_LIVES,
+  WAR_EXTRA_WEAPONS,
+  WAR_BULLET_SPEED,
+  WAR_BULLET_RADIUS,
+  WAR_FIST_RANGE,
+  WAR_FIST_DAMAGE,
+  WAR_FIST_COOLDOWN,
+  WAR_FIST_SWING,
+  WAR_WEAPONS,
+  getWarWeapon,
   EGG_ROUND_TIME,
   EGG_SCORE_TICK,
   RUN_ROUND_TIME,
@@ -46,6 +59,7 @@ const TRAIL_GAP = 6;
 const lastTrailPoints = new Map();
 const RHYTHM_DIRS = ['left', 'right', 'up', 'down'];
 const lastRhythmKeys = new Map();
+const lastWarTriggers = new Map();
 
 let onRoundEnd = null;
 const usedMaps = new Set();
@@ -72,6 +86,10 @@ function isRunMode() {
 
 function isRhythmMode() {
   return gameMode() === 'rhythm';
+}
+
+function isWarMode() {
+  return gameMode() === 'war';
 }
 
 function rhythmSeqLength(round) {
@@ -118,6 +136,7 @@ export function initGame() {
   const eggMode = isEggMode();
   const runMode = isRunMode();
   const rhythmMode = isRhythmMode();
+  const warMode = isWarMode();
   const chosenMap = selectMapFromPool(getPlayableMaps(gameMode()));
   const spawns = Array.isArray(chosenMap.spawns) ? chosenMap.spawns : [];
   const players = state.currentRoom.players.map((player, index) => {
@@ -143,8 +162,15 @@ export function initGame() {
       passCooldown: 0,
       lastPasser: null,
       isMonster: false,
-      lives: RUN_LIVES,
+      lives: warMode ? WAR_LIVES : RUN_LIVES,
       hurtCooldown: 0,
+      effects: {},
+      frozen: 0,
+      weapon: null,
+      ammo: 0,
+      facing: 1,
+      fireCooldown: 0,
+      swingTime: 0,
       rhythmScore: 0,
       hat: player.hat,
       cosmetics: player.cosmetics || [],
@@ -153,7 +179,7 @@ export function initGame() {
   });
   let firstHolder;
   let monsterIndex = -1;
-  if (runMode || rhythmMode) {
+  if (runMode || rhythmMode || warMode) {
     if (runMode) {
       let candidates = players;
       if (state.lastMonsterId) {
@@ -176,12 +202,13 @@ export function initGame() {
     players[monsterIndex].lives = 0;
   } else if (eggMode) {
     players[firstHolder].hasEgg = true;
-  } else if (!rhythmMode) {
+  } else if (!rhythmMode && !warMode) {
     players[firstHolder].hasBomb = true;
     players[firstHolder].lastPasser = players[firstHolder].id;
   }
   lastTrailPoints.clear();
   lastRhythmKeys.clear();
+  lastWarTriggers.clear();
   state.gameState = {
     mode: gameMode(),
     players,
@@ -193,7 +220,7 @@ export function initGame() {
       platformColors: chosenMap.platformColors || ['#a3d97a', '#7fd3f2', '#f6c768', '#f2a1a1'],
       music: chosenMap.music || null
     },
-    bombOwnerId: runMode || rhythmMode ? null : players[firstHolder].id,
+    bombOwnerId: runMode || rhythmMode || warMode ? null : players[firstHolder].id,
     eggOwnerId: eggMode ? players[firstHolder].id : null,
     monsterId: runMode ? players[monsterIndex].id : null,
     hitCount: 0,
@@ -213,13 +240,36 @@ export function initGame() {
         ? 'Pegue o ovo! Quem tiver menos pontos quando o tempo zerar explode.'
         : rhythmMode
           ? 'Aperte as setas na ordem! Quem tiver menos pontos no fim da sequência será amassado.'
-          : 'A partida começou! Passe a bomba para alguém antes que ela exploda.',
+          : warMode
+            ? 'GUERRA! Pegue uma arma e elimine todos. Último de pé vence!'
+            : 'A partida começou! Passe a bomba para alguém antes que ela exploda.',
     rev: 0,
     t: Date.now(),
     roundResult: null,
     lastTime: null,
-    particles: []
+    particles: [],
+    orbs: [],
+    orbSeq: 0,
+    nextOrbAt: 2.5,
+    recentPickups: [],
+    orbPickCount: 0,
+    weapons: [],
+    warSeq: 0,
+    bullets: [],
+    shotCount: 0,
+    gunloadCount: 0,
+    warFists: false
   };
+  if (warMode) {
+    const total = Math.min(12, players.length + WAR_EXTRA_WEAPONS);
+    for (let i = 0; i < total; i++) {
+      const spot = findFreeSpot();
+      if (!spot) break;
+      const def = WAR_WEAPONS[Math.floor(Math.random() * WAR_WEAPONS.length)];
+      state.gameState.warSeq += 1;
+      state.gameState.weapons.push({ id: state.gameState.warSeq, x: spot.x, y: spot.y, type: def.id });
+    }
+  }
   if (rhythmMode) {
     beginRhythmSequence(1);
   }
@@ -240,6 +290,9 @@ export function stepGame(dt) {
   updatePlayers(dt);
   collidePlayers();
   updateParticles(dt);
+  if (gs.mode !== 'rhythm' && gs.mode !== 'war' && gs.running) {
+    stepPowerups(dt);
+  }
   if (gs.mode === 'egg' && gs.running && gs.roundOverTimer == null) {
     gs.bombTime = Math.max(0, (gs.bombTime || 0) - dt);
     if (gs.bombTime <= 0) {
@@ -251,6 +304,9 @@ export function stepGame(dt) {
     if (gs.bombTime <= 0) {
       finishRunRound(true);
     }
+  }
+  if (gs.mode === 'war' && gs.running && gs.roundOverTimer == null) {
+    stepWar(dt);
   }
   if (gs.mode === 'rhythm' && gs.running && gs.roundOverTimer == null) {
     stepRhythm(dt);
@@ -274,9 +330,32 @@ function updatePlayers(dt) {
       jump = false;
       dash = false;
     }
+    if ((player.frozen || 0) > 0) {
+      player.frozen = Math.max(0, player.frozen - dt);
+      left = false;
+      right = false;
+      jump = false;
+      dash = false;
+    }
+    if (gs.mode === 'war') {
+      if (player.fireCooldown > 0) {
+        player.fireCooldown = Math.max(0, player.fireCooldown - dt);
+      }
+      if (player.swingTime > 0) {
+        player.swingTime = Math.max(0, player.swingTime - dt);
+      }
+      const trigger = !!dash;
+      const prevTrigger = lastWarTriggers.get(player.id) || false;
+      lastWarTriggers.set(player.id, trigger);
+      if (trigger && !prevTrigger) {
+        fireWeapon(player);
+      }
+      dash = false;
+    }
 
     if (player.dashCooldown > 0) {
-      player.dashCooldown = Math.max(0, player.dashCooldown - dt);
+      const turbo = effectActive(player, 'dash') ? 1 / getPowerup('dash').dashCooldownMult : 1;
+      player.dashCooldown = Math.max(0, player.dashCooldown - dt * turbo);
     }
     if (player.dashActive) {
       player.dashTime -= dt;
@@ -295,13 +374,16 @@ function updatePlayers(dt) {
     if (left) move -= 1;
     if (right) move += 1;
 
+    const speedMult = getSpeedMultiplier(player);
     if (player.dashActive) {
-      player.vx = player.vx * 0.96 + move * DASH_SPEED * speedScale * 0.06;
+      player.vx = player.vx * 0.96 + move * DASH_SPEED * speedScale * speedMult * 0.06;
       spawnDashParticles(player);
     } else {
-      player.vx += move * RUN_SPEED * speedScale * dt;
+      player.vx += move * RUN_SPEED * speedScale * speedMult * dt;
       player.vx *= FRICTION;
     }
+    if (player.vx > 15) player.facing = 1;
+    else if (player.vx < -15) player.facing = -1;
 
     if (jump && player.onGround) {
       player.vy = -JUMP_SPEED;
@@ -313,7 +395,7 @@ function updatePlayers(dt) {
       player.dashActive = true;
       player.dashTime = DASH_ACTIVE_TIME;
       player.dashCooldown = DASH_COOLDOWN;
-      player.vx += (move || 1) * DASH_SPEED * speedScale;
+      player.vx += (move || 1) * DASH_SPEED * speedScale * speedMult;
       spawnDashParticles(player);
     }
 
@@ -373,16 +455,17 @@ function updatePlayers(dt) {
 
     if (player.hasEgg) {
       player.eggAcc = (player.eggAcc || 0) + dt;
+      const scoreMult = effectActive(player, 'double') ? 2 : 1;
       while (player.eggAcc >= EGG_SCORE_TICK) {
         player.eggAcc -= EGG_SCORE_TICK;
-        player.eggScore = (player.eggScore || 0) + 1;
+        player.eggScore = (player.eggScore || 0) + scoreMult;
       }
       gs.eggOwnerId = player.id;
       gs.bombOwnerId = player.id;
     }
   });
 
-  if (gs.mode === 'run' || gs.mode === 'rhythm') return;
+  if (gs.mode === 'run' || gs.mode === 'rhythm' || gs.mode === 'war') return;
   const itemFlag = gs.mode === 'egg' ? 'hasEgg' : 'hasBomb';
   const holder = gs.players.find(player => player[itemFlag] && player.alive);
   if (gs.roundOverTimer == null && !holder) {
@@ -407,7 +490,8 @@ function collidePlayers() {
     monsterHits();
     return;
   }
-  if (gs.mode === 'rhythm') {
+  if (gs.mode === 'rhythm' || gs.mode === 'war') {
+    if (gs.mode === 'war') weaponPickups();
     return;
   }
   const itemFlag = gs.mode === 'egg' ? 'hasEgg' : 'hasBomb';
@@ -416,6 +500,7 @@ function collidePlayers() {
     if (player.passCooldown > 0) return;
     gs.players.forEach(target => {
       if (target.id === player.id || !target.alive) return;
+      if (effectActive(target, 'ghost')) return;
       const dx = target.x - player.x;
       const dy = target.y - player.y;
       if (Math.hypot(dx, dy) < BOMB_PASS_DISTANCE) {
@@ -587,6 +672,7 @@ function monsterHits() {
   if (!monster) return;
   gs.players.forEach(target => {
     if (!target.alive || target.isMonster || target.hurtCooldown > 0) return;
+    if (effectActive(target, 'ghost')) return;
     if (Math.hypot(target.x - monster.x, target.y - monster.y) >= BOMB_PASS_DISTANCE) return;
     target.lives -= 1;
     target.hurtCooldown = MONSTER_HIT_COOLDOWN;
@@ -594,6 +680,7 @@ function monsterHits() {
     const angle = Math.atan2(target.y - monster.y, target.x - monster.x);
     target.vx += Math.cos(angle) * 420;
     target.vy = Math.min(target.vy, -240);
+    spawnHitBurst(target);
     if (target.lives <= 0) killRunner(target);
   });
 }
@@ -604,6 +691,8 @@ function killRunner(target) {
   target.lives = 0;
   target.hasBomb = false;
   target.hasEgg = false;
+  target.effects = {};
+  target.frozen = 0;
   gs.deathOrder.push(target.id);
   gs.explosionCount = (gs.explosionCount || 0) + 1;
   spawnExplosion(target);
@@ -656,6 +745,8 @@ function endRound(explodedPlayer) {
   const gs = state.gameState;
   explodedPlayer.alive = false;
   explodedPlayer.hasBomb = false;
+  explodedPlayer.effects = {};
+  explodedPlayer.frozen = 0;
   spawnExplosion(explodedPlayer);
   const loser = explodedPlayer.nickname;
   const winnerId = explodedPlayer.lastPasser;
@@ -690,6 +781,8 @@ function explodeLowestScore() {
   victim.alive = false;
   victim.hasEgg = false;
   victim.hasBomb = false;
+  victim.effects = {};
+  victim.frozen = 0;
   gs.deathOrder.push(victim.id);
   gs.explosionCount = (gs.explosionCount || 0) + 1;
   spawnExplosion(victim);
@@ -813,6 +906,10 @@ function spawnExplosion(player) {
   spawnShardBurst(player.x, player.y - PLAYER_HEIGHT - 46, 20, ['#ff6b6b', '#ffd23f', '#ff9f43', '#ffffff'], 60, 260, 420);
 }
 
+function spawnHitBurst(player) {
+  spawnShardBurst(player.x, player.y - PLAYER_HEIGHT * 0.6, 16, [player.color, '#e03131', '#ffffff'], 70, 230, 500);
+}
+
 function spawnShardBurst(x, y, count, colors, minSpeed, maxSpeed, gravity) {
   const gs = state.gameState;
   for (let i = 0; i < count; i++) {
@@ -880,4 +977,341 @@ function updateParticles(dt) {
       particle.vx *= 0.7;
     }
   }
+}
+
+// ============================================================================
+// POWER-UPS — bolhas rosas "?" (valores ajustáveis em constants.js)
+// ============================================================================
+
+function effectActive(player, id) {
+  return !!player.effects && (player.effects[id] || 0) > 0;
+}
+
+function getSpeedMultiplier(player) {
+  let mult = 1;
+  if (effectActive(player, 'speed')) mult *= getPowerup('speed').speedMultiplier;
+  if (player.isMonster && effectActive(player, 'mSpeed')) mult *= getPowerup('heart').monsterSpeedMultiplier;
+  return mult;
+}
+
+function stepPowerups(dt) {
+  const gs = state.gameState;
+  gs.players.forEach(player => {
+    if (!player.alive || !player.effects) return;
+    Object.keys(player.effects).forEach(key => {
+      player.effects[key] -= dt;
+      if (player.effects[key] <= 0) delete player.effects[key];
+    });
+  });
+  spawnOrbsIfNeeded();
+  expireOrbs();
+  handleOrbPickups();
+  gs.recentPickups = (gs.recentPickups || []).filter(entry => gs.time < entry.until);
+}
+
+function spawnOrbsIfNeeded() {
+  const gs = state.gameState;
+  const cfg = POWERUP_CONFIG;
+  if ((gs.orbs || []).length >= cfg.maxOrbsOnMap) return;
+  if (gs.time < (gs.nextOrbAt || 0)) return;
+  const freq = Math.max(0, Math.min(200, Number(roomSettings().powerupFrequency || 0)));
+  if (freq <= 0) {
+    gs.nextOrbAt = gs.time + 1;
+    return;
+  }
+  const available = POWERUPS.filter(powerup => powerup.modes.includes(gs.mode));
+  if (available.length === 0) return;
+  let mean;
+  if (freq <= 100) {
+    // 0–100%: do intervalo lento (14s) ao rápido (4s)
+    mean = cfg.spawnIntervalSlow - (cfg.spawnIntervalSlow - cfg.spawnIntervalFast) * (freq / 100);
+  } else {
+    // 100–200%: continua acelerando do rápido (4s) até o mínimo (1.5s)
+    const t = (freq - 100) / 100;
+    mean = cfg.spawnIntervalFast + (cfg.spawnIntervalMin - cfg.spawnIntervalFast) * t;
+  }
+  gs.nextOrbAt = gs.time + mean * (0.75 + Math.random() * 0.5);
+  const spot = findFreeSpot();
+  if (!spot) return;
+  const type = available[Math.floor(Math.random() * available.length)];
+  gs.orbSeq = (gs.orbSeq || 0) + 1;
+  gs.orbs.push({ id: gs.orbSeq, x: spot.x, y: spot.y, type: type.id, bornAt: gs.time });
+  spawnOrbSpawnFx(spot.x, spot.y);
+}
+
+function findFreeSpot() {
+  const gs = state.gameState;
+  const r = POWERUP_CONFIG.orbRadius;
+  for (let attempt = 0; attempt < 24; attempt++) {
+    const x = MIN_X + 30 + Math.random() * (MAX_X - MIN_X - 60);
+    const y = 110 + Math.random() * (FLOOR_Y - 130);
+    const hitsPlatform = gs.platforms.some(platform =>
+      x + r > platform.x - 6 &&
+      x - r < platform.x + platform.width + 6 &&
+      y + r > platform.y - 6 &&
+      y - r < platform.y + platform.height + 6);
+    if (hitsPlatform) continue;
+    const tooClose =
+      gs.players.some(player => player.alive && Math.hypot(player.x - x, player.y - PLAYER_HEIGHT / 2 - y) < 70) ||
+      (gs.orbs || []).some(orb => Math.hypot(orb.x - x, orb.y - y) < 90);
+    if (tooClose) continue;
+    return { x, y };
+  }
+  return null;
+}
+
+function expireOrbs() {
+  const gs = state.gameState;
+  gs.orbs = (gs.orbs || []).filter(orb => gs.time - orb.bornAt <= POWERUP_CONFIG.orbLifetime);
+}
+
+function spawnOrbSpawnFx(x, y) {
+  const gs = state.gameState;
+  const colors = ['#ff5db1', '#ffa8d8', '#ffd8ec', '#ffffff'];
+  for (let i = 0; i < 18; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 30 + Math.random() * 110;
+    const life = 0.5 + Math.random() * 0.5;
+    gs.particles.push({
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 50,
+      life,
+      maxLife: life,
+      size: 2.5 + Math.random() * 3.5,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      gravity: -40
+    });
+  }
+  if (gs.particles.length > MAX_PARTICLES) {
+    gs.particles.splice(0, gs.particles.length - MAX_PARTICLES);
+  }
+}
+
+function handleOrbPickups() {
+  const gs = state.gameState;
+  if (!(gs.orbs || []).length) return;
+  const reach = POWERUP_CONFIG.orbRadius + 22;
+  for (let i = gs.orbs.length - 1; i >= 0; i--) {
+    const orb = gs.orbs[i];
+    const def = getPowerup(orb.type);
+    if (!def || !def.modes.includes(gs.mode)) continue;
+    const taker = gs.players.find(player =>
+      player.alive &&
+      Math.hypot(player.x - orb.x, player.y - PLAYER_HEIGHT / 2 - orb.y) < reach);
+    if (!taker) continue;
+    gs.orbs.splice(i, 1);
+    applyPowerup(taker, def);
+    gs.orbPickCount = (gs.orbPickCount || 0) + 1;
+    gs.recentPickups = [
+      ...(gs.recentPickups || []),
+      { playerId: taker.id, typeId: def.id, until: gs.time + POWERUP_CONFIG.pickupTextLife }
+    ];
+  }
+}
+
+function applyPowerup(player, def) {
+  const gs = state.gameState;
+  player.effects = player.effects || {};
+  switch (def.id) {
+    case 'speed':
+    case 'dash':
+    case 'ghost':
+    case 'double':
+      player.effects[def.id] = def.duration;
+      break;
+    case 'freeze':
+      gs.players.forEach(other => {
+        if (other === player || !other.alive) return;
+        other.frozen = def.freezeDuration;
+      });
+      break;
+    case 'relief': {
+      const holder = gs.players.find(candidate => candidate.alive && candidate.hasBomb);
+      const target = holder ? farthestAliveFrom(holder) : null;
+      if (holder && target) transferBomb(holder, target);
+      break;
+    }
+    case 'heart':
+      if (player.isMonster) {
+        player.effects.mSpeed = def.monsterSpeedDuration;
+      } else {
+        player.lives = Math.min((player.lives || 0) + 1, def.maxHearts);
+      }
+      break;
+  }
+}
+
+function farthestAliveFrom(fromPlayer) {
+  const gs = state.gameState;
+  let best = null;
+  let bestDist = -1;
+  gs.players.forEach(other => {
+    if (other === fromPlayer || !other.alive || effectActive(other, 'ghost')) return;
+    const dist = Math.hypot(other.x - fromPlayer.x, other.y - fromPlayer.y);
+    if (dist > bestDist) {
+      bestDist = dist;
+      best = other;
+    }
+  });
+  return best;
+}
+
+// ============================================================================
+// 🔫 GUERRA! — armas no chão, tiros e punhos (valores em constants.js)
+// ============================================================================
+
+function fireWeapon(player) {
+  const gs = state.gameState;
+  if (player.fireCooldown > 0) return;
+  const def = player.weapon ? getWarWeapon(player.weapon) : null;
+  const canShoot = def && player.ammo > 0;
+  if (!canShoot) {
+    if (!player.weapon || gs.warFists) meleeAttack(player);
+    return;
+  }
+  player.ammo -= 1;
+  if (player.ammo <= 0) player.weapon = null;
+  player.fireCooldown = def.fireCooldown;
+  spawnBullet(player, def);
+  gs.shotCount = (gs.shotCount || 0) + 1;
+  activateWarFistsIfNeeded();
+}
+
+function meleeAttack(player) {
+  const gs = state.gameState;
+  player.fireCooldown = WAR_FIST_COOLDOWN;
+  player.swingTime = WAR_FIST_SWING;
+  gs.players.forEach(target => {
+    if (target === player || !target.alive) return;
+    if (Math.hypot(target.x - player.x, target.y - player.y) <= WAR_FIST_RANGE) {
+      applyWarDamage(target, WAR_FIST_DAMAGE);
+    }
+  });
+}
+
+function weaponPickups() {
+  const gs = state.gameState;
+  if (!(gs.weapons || []).length) return;
+  for (let i = gs.weapons.length - 1; i >= 0; i--) {
+    const ground = gs.weapons[i];
+    const def = getWarWeapon(ground.type);
+    if (!def) continue;
+    const taker = gs.players.find(player =>
+      player.alive &&
+      (!player.weapon || player.ammo <= 0) &&
+      Math.hypot(player.x - ground.x, player.y - PLAYER_HEIGHT / 2 - ground.y) < 34);
+    if (!taker) continue;
+    gs.weapons.splice(i, 1);
+    taker.weapon = ground.type;
+    taker.ammo = def.ammo;
+    taker.fireCooldown = 0.3;
+    gs.gunloadCount = (gs.gunloadCount || 0) + 1;
+  }
+  activateWarFistsIfNeeded();
+}
+
+function activateWarFistsIfNeeded() {
+  const gs = state.gameState;
+  if (gs.warFists) return;
+  const gunsLeft = gs.weapons.length > 0 ||
+    gs.players.some(player => player.alive && player.weapon && player.ammo > 0);
+  if (!gunsLeft && gs.players.filter(player => player.alive).length > 1) {
+    gs.warFists = true;
+    gs.message = 'Acabaram as armas! Que vença a PORRADA! 👊';
+  }
+}
+
+function spawnBullet(player, def) {
+  const gs = state.gameState;
+  const dir = player.facing || 1;
+  gs.bullets.push({
+    x: player.x + dir * (PLAYER_WIDTH / 2 + 8),
+    y: player.y - PLAYER_HEIGHT * 0.55,
+    vx: dir * WAR_BULLET_SPEED,
+    ownerId: player.id,
+    dmg: def.damage,
+    color: def.color
+  });
+}
+
+function stepWar(dt) {
+  const gs = state.gameState;
+  activateWarFistsIfNeeded();
+  for (let i = gs.bullets.length - 1; i >= 0; i--) {
+    const bullet = gs.bullets[i];
+    bullet.x += bullet.vx * dt;
+    let dead = bullet.x < -20 || bullet.x > 1100;
+    if (!dead) {
+      dead = gs.platforms.some(platform =>
+        bullet.x > platform.x &&
+        bullet.x < platform.x + platform.width &&
+        bullet.y > platform.y &&
+        bullet.y < platform.y + platform.height);
+    }
+    if (!dead) {
+      const victim = gs.players.find(player =>
+        player.alive &&
+        player.id !== bullet.ownerId &&
+        Math.abs(player.x - bullet.x) < PLAYER_WIDTH / 2 + WAR_BULLET_RADIUS &&
+        bullet.y > player.y - PLAYER_HEIGHT - WAR_BULLET_RADIUS &&
+        bullet.y < player.y + WAR_BULLET_RADIUS);
+      if (victim) {
+        applyWarDamage(victim, bullet.dmg);
+        dead = true;
+      }
+    }
+    if (dead) gs.bullets.splice(i, 1);
+  }
+}
+
+function applyWarDamage(target, dmg) {
+  target.lives -= dmg;
+  spawnHitBurst(target);
+  if (target.lives <= 0) killWarPlayer(target);
+}
+
+function killWarPlayer(target) {
+  const gs = state.gameState;
+  target.alive = false;
+  target.lives = 0;
+  target.hasBomb = false;
+  target.hasEgg = false;
+  target.weapon = null;
+  target.ammo = 0;
+  target.effects = {};
+  target.frozen = 0;
+  gs.deathOrder.push(target.id);
+  gs.explosionCount = (gs.explosionCount || 0) + 1;
+  spawnExplosion(target);
+  checkWarRoundEnd();
+}
+
+function checkWarRoundEnd() {
+  const gs = state.gameState;
+  if (gs.roundOverTimer != null) return;
+  const alive = gs.players.filter(player => player.alive);
+  if (alive.length <= 1) finishWarRound();
+}
+
+function finishWarRound() {
+  const gs = state.gameState;
+  if (gs.roundOverTimer != null) return;
+  const survivor = gs.players.find(player => player.alive) || null;
+  const byId = new Map(gs.players.map(player => [player.id, player]));
+  const firstDead = byId.get(gs.deathOrder[0]) || null;
+  gs.pendingResult = {
+    title: 'Fim da guerra!',
+    text: survivor
+      ? `<strong>${survivor.nickname}</strong> foi o último de pé!<br>Primeiro a cair: <strong>${firstDead ? firstDead.nickname : 'Ninguém'}</strong>`
+      : 'Todos caíram em batalha!',
+    winnerId: survivor ? survivor.id : null,
+    winnerName: survivor ? survivor.nickname : 'Ninguém',
+    loserId: firstDead ? firstDead.id : null,
+    loserName: firstDead ? firstDead.nickname : null,
+    deathOrder: [...gs.deathOrder]
+  };
+  gs.message = survivor ? `${survivor.nickname} venceu a guerra!` : 'Todos caíram!';
+  gs.roundOverTimer = DEATH_ANIM_TIME;
 }

@@ -87,12 +87,14 @@
           <div class="map-editor-topbar-actions">
             <input id="mapNameInput" placeholder="Nome do mapa" maxlength="24" autocomplete="off" />
             <div id="mapModeChips" class="map-mode-chips" title="Modos de jogo do arquivo (clique para ativar/desativar)"></div>
-            <button id="mapNewBtn" class="secondary">Novo</button>
-            <button id="mapSaveBtn">Salvar</button>
-            <button id="mapExportBtn" class="btn-green">Exportar</button>
-            <button id="mapImportBtn" class="btn-purple">Importar</button>
-            <input type="file" id="mapImportFileInput" accept=".pgmap,.json,application/json" class="hidden" />
           </div>
+        </div>
+        <div class="map-editor-topbar-row map-editor-actions-row">
+          <button id="mapNewBtn" class="secondary">Novo</button>
+          <button id="mapSaveBtn">Salvar</button>
+          <button id="mapExportBtn" class="btn-green">Exportar</button>
+          <button id="mapImportBtn" class="btn-purple">Importar</button>
+          <input type="file" id="mapImportFileInput" accept=".pgmap,.json,application/json" class="hidden" />
         </div>
       </div>
 
@@ -127,7 +129,7 @@
               <label>Altura <input type="number" id="mapPropH" step="1" min="8" /></label>
               <label class="map-prop-color">Cor
                 <span class="color-picker-wrap">
-                  <input type="color" id="mapPropColor" value="#a3d97a" />
+                  <input type="color" id="mapPropColor" value="#a3d97a" list="colorPresets" />
                   <span id="mapPropColorHex">#A3D97A</span>
                 </span>
               </label>
@@ -139,7 +141,7 @@
             <div class="setting-line">
               <label for="mapBgColorInput">Cor do fundo</label>
               <div class="color-picker-wrap">
-                <input type="color" id="mapBgColorInput" value="#bfe8ff" />
+                <input type="color" id="mapBgColorInput" value="#bfe8ff" list="colorPresets" />
                 <span id="mapBgColorHex">#BFE8FF</span>
               </div>
             </div>
@@ -224,7 +226,7 @@
             <div class="setting-line">
               <label for="playerColorInput">Cor do personagem</label>
               <div class="color-picker-wrap">
-                <input type="color" id="playerColorInput" value="#ff6b6b" />
+                <input type="color" id="playerColorInput" value="#ff6b6b" list="colorPresets" />
                 <span id="colorHexDisplay">#FF6B6B</span>
               </div>
             </div>
@@ -284,7 +286,7 @@
             <div class="setting-line">
               <label for="fpsColorInput">Cor dos mostradores</label>
               <div class="color-picker-wrap">
-                <input type="color" id="fpsColorInput" value="#ffe066" />
+                <input type="color" id="fpsColorInput" value="#ffe066" list="colorPresets" />
                 <span id="fpsColorHexDisplay">#FFE066</span>
               </div>
             </div>
@@ -347,6 +349,8 @@
       <button id="gameQuitBtn" class="game-quit-btn" title="Sair do jogo">✕</button>
     </section>
   </div>
+
+  <button id="fullscreenBtn" class="game-quit-btn fullscreen-toggle" title="Tela cheia">⛶</button>
 
   <div id="hatPopup" class="hat-popup hidden">
     <div class="hat-popup-box">
@@ -417,6 +421,7 @@
         <button type="button" id="hostConfigCloseBtn" title="Fechar">✕</button>
       </div>
       <p class="setting-hint">Host: <span id="hostConfigHostName"></span></p>
+      <div id="hostConfigWarning" class="host-config-warning hidden"></div>
 
       <div class="setting-group lobby-maps-group">
         <strong class="setting-title">Mapas da partida: <span id="lobbyMapsModeName"></span></strong>
@@ -431,6 +436,9 @@
             <div id="lobbyCustomMaps" class="lobby-map-grid"></div>
           </div>
         </div>
+        <div class="lobby-maps-select-all">
+          <button type="button" id="selectAllMapsBtn" class="secondary">Selecionar todos os mapas</button>
+        </div>
       </div>
 
       <div class="setting-group lobby-rules-group">
@@ -438,7 +446,7 @@
         <div class="lobby-rule-line">
           <label for="powerupFreqInput">Frequência dos power-ups: <span id="powerupFreqValue">50%</span></label>
           <div class="lobby-rule-controls">
-            <input type="range" id="powerupFreqInput" min="0" max="100" step="1" value="50" />
+            <input type="range" id="powerupFreqInput" min="0" max="200" step="1" value="50" />
             <button type="button" id="resetPowerupFreqBtn" class="mini-reset" title="Restaurar padrão">↺</button>
           </div>
         </div>
@@ -452,7 +460,7 @@
         <div class="lobby-rule-line">
           <label for="scoreLimitInput">Limite de pontuação: <span id="scoreLimitValue">15 pts</span></label>
           <div class="lobby-rule-controls">
-            <input type="range" id="scoreLimitInput" min="5" max="30" step="1" value="15" />
+            <input type="range" id="scoreLimitInput" min="5" max="50" step="1" value="15" />
             <button type="button" id="resetScoreLimitBtn" class="mini-reset" title="Restaurar padrão">↺</button>
           </div>
         </div>
@@ -580,5 +588,21 @@
   </div>
 
   <script type="module" src="src/js/main.js"></script>
+  <datalist id="colorPresets">
+    <option value="#ff6b6b"></option>
+    <option value="#ff9f43"></option>
+    <option value="#ffd23f"></option>
+    <option value="#8ce99a"></option>
+    <option value="#2ecc40"></option>
+    <option value="#63e6be"></option>
+    <option value="#7fd3f2"></option>
+    <option value="#4dabf7"></option>
+    <option value="#5c7cfa"></option>
+    <option value="#b197fc"></option>
+    <option value="#f78fb3"></option>
+    <option value="#ffffff"></option>
+    <option value="#adb5bd"></option>
+    <option value="#222222"></option>
+  </datalist>
 </body>
 </html>

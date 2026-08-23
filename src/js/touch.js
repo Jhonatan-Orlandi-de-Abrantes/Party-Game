@@ -1,5 +1,5 @@
 import { state } from './state.js';
-import { setTouchInput } from './input.js';
+import { setTouchInput, setRhythmTouch } from './input.js';
 import {
   getTouchEnabled,
   getTouchStyle,
@@ -34,6 +34,7 @@ function releaseAll() {
   setTouchInput('right', false);
   setTouchInput('jump', false);
   setTouchInput('dash', false);
+  ['up', 'right', 'down', 'left'].forEach(dir => setRhythmTouch(dir, false));
 }
 
 function makeButton(className, content) {
@@ -44,13 +45,13 @@ function makeButton(className, content) {
   return btn;
 }
 
-function wireButton(btn, action) {
+function wireButton(btn, action, setter = setTouchInput) {
   const press = event => {
     event.preventDefault();
     if (event.pointerType) btn.setPointerCapture(event.pointerId);
-    setTouchInput(action, true);
+    setter(action, true);
   };
-  const release = () => setTouchInput(action, false);
+  const release = () => setter(action, false);
   btn.addEventListener('pointerdown', press);
   btn.addEventListener('pointerup', release);
   btn.addEventListener('pointercancel', release);
@@ -129,9 +130,36 @@ function addAnalogJoystick(pos) {
   return base;
 }
 
+const MODE_TOUCH_LABELS = {
+  bomb: 'DASH',
+  egg: 'DASH',
+  run: 'USAR',
+  war: 'ATIRAR'
+};
+
+let builtMode = null;
+
+function currentActionLabel() {
+  const mode = state.gameState && state.gameState.mode;
+  return MODE_TOUCH_LABELS[mode] || 'DASH';
+}
+
 function rebuild() {
   if (!controlsEl) return;
   controlsEl.innerHTML = '';
+  const mode = (state.gameState && state.gameState.mode) || null;
+  if (mode === 'rhythm') {
+    const row = document.createElement('div');
+    row.className = 'touch-rhythm-row';
+    [['up', '&#9650;'], ['down', '&#9660;'], ['left', '&#9664;'], ['right', '&#9654;']].forEach(([dir, glyph]) => {
+      const btn = makeButton('touch-btn touch-rhythm-btn', glyph);
+      wireButton(btn, dir, setRhythmTouch);
+      row.appendChild(btn);
+    });
+    controlsEl.appendChild(row);
+    builtMode = mode;
+    return;
+  }
   const style = getTouchStyle();
   const layout = getTouchLayout() || DEFAULT_TOUCH_LAYOUT;
   if (style === 'analog') {
@@ -141,16 +169,19 @@ function rebuild() {
     addArrowButton('right', '&#9654;', layout.right || DEFAULT_TOUCH_LAYOUT.right);
   }
   addActionButton('jump', 'JUMP', layout.jump || DEFAULT_TOUCH_LAYOUT.jump);
-  addActionButton('dash', 'DASH', layout.dash || DEFAULT_TOUCH_LAYOUT.dash);
+  addActionButton('dash', currentActionLabel(), layout.dash || DEFAULT_TOUCH_LAYOUT.dash);
+  builtMode = mode;
 }
 
 export function updateTouchVisibility() {
   const roundEnded = !!(state.gameState && (state.gameState.roundResult != null || state.gameState.pendingResult));
   const show = state.currentScreen === 'game' && !roundEnded && getTouchEnabled();
   if (!controlsEl) return;
+  const mode = (state.gameState && state.gameState.mode) || null;
+  const needsRebuild = show && (controlsEl.childElementCount === 0 || mode !== builtMode);
   controlsEl.classList.toggle('hidden', !show);
   if (show) {
-    rebuild();
+    if (needsRebuild) rebuild();
   } else {
     releaseAll();
   }

@@ -20,13 +20,13 @@ mantém o online. Um único serviço resolve tudo.
    (abra, faça login com a conta criada).
 3. No navegador, acesse github.com, clique no **+** (canto superior direito)
    → **New repository**:
-   - Repository name: `bombparty`
+   - Repository name: `Party-Game`
    - Marque **Public**
    - NÃO marque "Add a README"
    - Clique em **Create repository**
 4. Volte ao **GitHub Desktop** → menu **File → Clone Repository** → aba
-   **GitHub.com** → escolha `seuusuario/bombparty` → escolha uma pasta local
-   (ex.: `Documentos\bombparty`) → **Clone**.
+   **GitHub.com** → escolha `seuusuario/Party-Game` → escolha uma pasta local
+   (ex.: `Documentos\Party-Game`) → **Clone**.
 5. Abra a pasta clonada no Explorador de Arquivos e copie para dentro dela
    **TODO o conteúdo** da pasta do jogo (`index.html`, pasta `src/`, `musics/`,
    `sounds/`, `server/`, etc.), com UM cuidado:
@@ -42,9 +42,9 @@ mantém o online. Um único serviço resolve tudo.
    **GitHub** (autorize o acesso).
 2. No painel, clique em **New +** (canto superior direito) → **Web Service**.
 3. Clique em **Build and deploy from a Git repository** → **Connect GitHub** →
-   escolha o repositório `bombparty`.
+   escolha o repositório `Party-Game`.
 4. Preencha a tela de configuração:
-   - **Name:** `bombparty` (vira parte do endereço)
+   - **Name:** `Party-Game` (vira parte do endereço)
    - **Language:** Node
    - **Branch:** `main`
    - **Region:** a mais próxima (Ohio/Frankfurt…)
@@ -54,7 +54,7 @@ mantém o online. Um único serviço resolve tudo.
    - **Instance Type:** **Free**
 5. Clique em **Create Web Service** e aguarde o build (~2 minutos).
 6. No topo da página aparece o endereço do seu jogo, algo como
-   **https://bombparty.onrender.com** — pronto! Esse link JÁ É O JOGO ONLINE.
+   **https://Party-Game.onrender.com** — pronto! Esse link JÁ É O JOGO ONLINE.
 7. Teste: abra o link no seu celular, crie a sala; no PC do amigo, abra o mesmo
    link e entre com o código. 🎉
 
@@ -83,12 +83,12 @@ Se quiser manter o jogo também no Netlify (carrega rápido, CDN):
 3. Para o online funcionar pelo Netlify, os jogadores devem abrir o site com
    `?srv=` apontando para o servidor do Render:
    ```
-   https://seusite.netlify.app/?srv=https://bombparty.onrender.com
+   https://seusite.netlify.app/?srv=https://Party-Game.onrender.com
    ```
    - Use esse endereço (com `?srv=`) ao criar/entrar nas salas.
    - Os **links de convite** gerados no lobby já incluem o `?srv=`
      automaticamente — quem receber joga sem configurar nada.
-   - O valor fica salvo no navegador (`bombPartyServerUrl`); dá para limpar
+   - O valor fica salvo no navegador (`Party-GameServerUrl`); dá para limpar
      abrindo o site com `?net=0` e depois removendo manualmente, ou simplesmente
      usando sempre o link com `?srv=`.
 

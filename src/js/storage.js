@@ -221,10 +221,20 @@ function touchDeviceKey(prefix) {
   return prefix + 'device:' + getDeviceId();
 }
 
+// Detecta se este aparelho é um dispositivo móvel (celular/tablet). Não basta
+// ter tela de toque: notebooks com touchscreen devem vir com o touch DESLIGADO.
+export function isMobileDevice() {
+  if (typeof navigator === 'undefined') return false;
+  const ua = String(navigator.userAgent || '');
+  const uaMobile = /android|iphone|ipad|ipod|windows phone|webos|blackberry|bada|tizen|silk|kindle|opera mini|opera mobi|iemobile|mobile|tablet/i.test(ua);
+  const iPadOS = /Macintosh/i.test(ua) && (navigator.maxTouchPoints || 0) > 1;
+  return uaMobile || iPadOS;
+}
+
 export function getTouchEnabled() {
   const value = localStorage.getItem(touchDeviceKey(TOUCH_ENABLED_PREFIX));
   if (value === null) {
-    return typeof window !== 'undefined' && ('ontouchstart' in window || (navigator.maxTouchPoints || 0) > 0);
+    return isMobileDevice();
   }
   return value === '1';
 }

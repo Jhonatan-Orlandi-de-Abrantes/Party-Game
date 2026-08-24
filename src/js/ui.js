@@ -206,6 +206,7 @@ let settingsOpenByController = false;
 let renderedPlayerIds = new Set();
 let padConnectIndex = -1;
 const KEYBOARD_CONNECT = -2; // tela de atribuição aberta para o TECLADO
+const TOUCH_CONNECT = -4; // tela de atribuição aberta para o TOQUE (Móvel)
 let lobbyMapImportInput = null;
 
 const FOCUS_SELECTOR = 'input:not([type="hidden"]), select, button, .hat-option';
@@ -402,6 +403,15 @@ export function initUi() {
         renderLobby();
       } else {
         refreshControlAssignments();
+      }
+      if (
+        enabled &&
+        state.currentScreen === 'lobby' &&
+        room && !room.started &&
+        getPadConnectIndex() === -1 &&
+        !document.querySelector('.modal:not(.hidden)')
+      ) {
+        showTouchConnect();
       }
     });
   }
@@ -1389,6 +1399,27 @@ export function showKeyboardConnect() {
   openPadAssignModal('Teclado detectado. Atribua a um jogador desta tela ou crie um novo.');
 }
 
+export function showTouchConnect() {
+  padConnectIndex = TOUCH_CONNECT;
+  openPadAssignModal('📱 Toque (Móvel) detectado. Atribua a um jogador desta tela ou crie um novo.');
+}
+
+// Abre a atribuição do Toque (Móvel) ao entrar/criar sala — somente se a opção
+// "Usar botões de toque" continua ligada (nunca reativa nem pergunta se o
+// usuário desligou) e se nenhum jogador local desta tela já tem o toque.
+export function maybePromptTouchAssignment() {
+  if (!getTouchEnabled()) return;
+  if (state.currentScreen !== 'lobby') return;
+  const room = state.currentRoom;
+  if (!room || room.started) return;
+  if (document.querySelector('.modal:not(.hidden)')) return;
+  const alreadyAssigned = (state.localPlayerIds || []).some(
+    id => getGamepadAssignment(id) === TOUCH_ASSIGNMENT
+  );
+  if (alreadyAssigned) return;
+  showTouchConnect();
+}
+
 function openPadAssignModal(text) {
   refs.padModalText.textContent = text;
   refs.padNewNameRow.classList.add('hidden');
@@ -1410,7 +1441,10 @@ export function hidePadConnect() {
 export function assignPadToPlayer(playerId) {
   const index = padConnectIndex;
   if (index === -1) return;
-  saveGamepadAssignment(playerId, index === KEYBOARD_CONNECT ? -1 : index);
+  saveGamepadAssignment(
+    playerId,
+    index === KEYBOARD_CONNECT ? -1 : index === TOUCH_CONNECT ? TOUCH_ASSIGNMENT : index
+  );
   if (!state.localPlayerIds.includes(playerId)) {
     saveLocalPlayers([...state.localPlayerIds, playerId]);
   }
@@ -1458,7 +1492,10 @@ function handlePadCreate() {
     refs.padModalNotice.textContent = result.error;
     return;
   }
-  saveGamepadAssignment(result.player.id, index === KEYBOARD_CONNECT ? -1 : index);
+  saveGamepadAssignment(
+    result.player.id,
+    index === KEYBOARD_CONNECT ? -1 : index === TOUCH_CONNECT ? TOUCH_ASSIGNMENT : index
+  );
   hidePadConnect();
   spawnConfetti(30);
   renderLobby();

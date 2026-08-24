@@ -6,6 +6,7 @@ import * as net from './net.js';
 import * as input from './input.js';
 import * as game from './game.js';
 import { drawScene, loadBombImage, loadEggImage, setResolutionScale } from './render.js';
+import { updateTouchVisibility } from './touch.js';
 import * as audio from './audio.js';
 import { spawnConfetti } from './effects.js';
 import { loadAllCosmeticImages } from './cosmetics.js';
@@ -36,6 +37,8 @@ import {
   uiBack,
   showPadConnect,
   showKeyboardConnect,
+  showTouchConnect,
+  maybePromptTouchAssignment,
   getPadConnectIndex,
   getSettingsPlayer,
   showResultsOverlay,
@@ -154,6 +157,7 @@ function becomeSimulator() {
     state.gameState = st;
     drawScene();
     updateHud();
+    updateTouchVisibility();
     if (st.roundResult.maxScoreReached) {
       showResultsOverlay(st.roundResult);
       audio.playSound('leaderboard');
@@ -212,6 +216,7 @@ function gameLoop(time) {
       state.gameState = shared;
       drawScene();
       updateHud();
+      updateTouchVisibility();
       showRoundResult(shared.roundResult);
     }
     return;
@@ -244,6 +249,7 @@ function gameLoop(time) {
 
   drawScene();
   updateHud();
+  updateTouchVisibility();
   if (state.gameState.running) {
     state.animationFrameId = requestAnimationFrame(gameLoop);
   }
@@ -259,6 +265,8 @@ function clientRenderLoop() {
   }
   state.lastFrameTime = nowPerf;
 
+  updateTouchVisibility();
+
   const st = storage.readGameState();
   const now = Date.now();
   playDeathSoundIfNew(st);
@@ -268,6 +276,7 @@ function clientRenderLoop() {
       state.gameState = st;
       drawScene();
       updateHud();
+      updateTouchVisibility();
       showRoundResult(st.roundResult);
     }
     return;
@@ -471,6 +480,7 @@ refs.createRoomBtn.addEventListener('click', () => {
     }
     spawnConfetti(30);
     showLobby();
+    maybePromptTouchAssignment();
   } catch (error) {
     console.error('Erro ao criar sala:', error);
     showNotice(refs.welcomeNotice, 'Erro ao criar a sala: ' + error.message);
@@ -489,6 +499,7 @@ refs.joinRoomBtn.addEventListener('click', () => {
     }
     spawnConfetti(30);
     showLobby();
+    maybePromptTouchAssignment();
   } catch (error) {
     console.error('Erro ao entrar na sala:', error);
     showNotice(refs.welcomeNotice, 'Erro ao entrar na sala: ' + error.message);

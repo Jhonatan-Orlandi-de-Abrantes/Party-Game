@@ -125,7 +125,14 @@ continua contando. O último de pé vence e vê uma tela de vitória com coroa �
   direita + pular + dash) ou **joystick analógico** (stick virtual + pular +
   dash). Layout totalmente customizável via editor de arrastar-e-soltar. As
   posições são salvas por dispositivo no `localStorage`. Os controles são
-  ocultados quando a rodada termina.
+  ocultados quando a rodada termina. A checkbox "Usar botões de toque" vem
+  **ligada por padrão só em dispositivos móveis** (`isMobileDevice()` em
+  storage.js — UA de celular/tablet/iPadOS; notebooks com touchscreen ficam
+  DESLIGADOS) e o valor persistido nunca é reativado sozinho: se o usuário
+  desligar, permanece desligado. Ao **ativar** a checkbox (ou ao **criar/
+  entrar** numa sala com ela ainda ligada e sem jogador local com toque
+  atribuído), o jogo abre logo a tela de atribuição para o **"📱 Toque
+  (Móvel)"** (`maybePromptTouchAssignment`).
 - **Sistema de doação PIX:** botão de doação visível no jogo, abre um modal com
   código PIX copia-e-cola e botão "Copiar código PIX". Suporta presets de valores
   salvos no `localStorage`.
@@ -473,8 +480,11 @@ PartyGame/
     `getFpsLimit`/`saveFpsLimit` (0 = sem limite, senão 5–240),
     `getResolution`/`saveResolution` (0.05–1),
     `getCustomKeys`/`saveCustomKeys`/`resetCustomKeys` (JSON de atalhos).
-  - Por dispositivo (persistente): `getDeviceId()` (UUID único por navegador),
-    `getHat`/`saveHat`, `getTouchEnabled`/`saveTouchEnabled`,
+   - Por dispositivo (persistente): `getDeviceId()` (UUID único por navegador),
+     `getHat`/`saveHat`, `isMobileDevice()` (detecta celular/tablet via UA,
+     incluindo iPadOS que se reporta como Macintosh com multitouch),
+     `getTouchEnabled`/`saveTouchEnabled` (sem valor salvo, o padrão é
+     `isMobileDevice()` — ligado no celular, desligado em PC/touchscreen),
     `getTouchStyle`/`saveTouchStyle`, `getTouchLayout`/`saveTouchLayout`/
     `resetTouchLayout`.
   - Globais: `getMusicVolume`/`setMusicVolume`, `getSfxVolume`/`setSfxVolume`
@@ -1051,7 +1061,9 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
   `hidePadConnect()` / `getPadConnectIndex()`. Lista os jogadores locais desta
   tela (atribuir o pad a um deles via `assignPadToPlayer`) ou cria um novo
   jogador (`padCreateBtn` → nome → `handlePadCreate`, que chama
-  `rooms.addLocalPlayer` e atribui o pad ao novo player).
+  `rooms.addLocalPlayer` e atribui o pad ao novo player). Sentinelas internas:
+  `-2` = teclado (`showKeyboardConnect`, grava `-1`) e `-4` = toque
+  (`showTouchConnect`, grava `TOUCH_ASSIGNMENT` = `-3`).
   - **Teclado também tem atribuição:** `showKeyboardConnect()` abre o mesmo
     modal para o TECLADO (sentinela `KEYBOARD_CONNECT = -2`; atribuir grava
     `-1` = "Teclado"). No lobby, qualquer tecla comum pressionada
@@ -1308,7 +1320,11 @@ código em `Criar seu Cosmetico/DOC-COSMETICOS.md`; exemplo pronto em
   arrastável (drag-and-drop). As posições são salvas como porcentagens
   (`DEFAULT_TOUCH_LAYOUT`) e persistidas no `localStorage`.
 - **Visibilidade:** `updateTouchVisibility()` mostra os controles apenas na tela
-  de jogo quando o round está ativo e o player tem touch habilitado.
+  de jogo quando o round está ativo e o player tem touch habilitado. É chamada
+  pela `showScreen` e **também a cada frame nos dois loops do main.js**
+  (`gameLoop`/`clientRenderLoop`) — sem isso, clientes móveis entravam no modo
+  Ritmo com os botões analógico/pulo/dash, pois `state.gameState.mode` ainda
+  não existia na hora da troca de tela (o rebuild das setas nunca disparava).
 - Cada botão usa `setTouchInput(action, bool)` do `input.js` para publicar
   input. O joystick analógico converte posição X em left/right.
 

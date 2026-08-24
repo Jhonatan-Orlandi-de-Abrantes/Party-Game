@@ -12,6 +12,7 @@ let everConnected = false;
 let sentRoom = null;
 let reconnectTimer = null;
 let membershipTimer = null;
+let pendingWhois = null;
 
 function externalBase() {
   try {
@@ -134,11 +135,26 @@ function connect() {
   };
 }
 
+function requestRoomBootstrap(room) {
+  const code = String(room || '').trim().toUpperCase();
+  if (!code) return;
+  // Entra na sala no servidor ANTES de perguntar: sem isso, a resposta
+  // (relay do snapshot do dono) nao chega de volta para quem perguntou.
+  const ok = rawSend({ t: 'join', room: code }) && rawSend({ t: 'whois', room: code });
+  pendingWhois = ok ? null : code;
+}
+
 function prefillWhois() {
-  if (state.myRoomCode) return;
+  if (state.myRoomCode) {
+    pendingWhois = null;
+    return;
+  }
   try {
     const code = (new URLSearchParams(window.location.search).get('room') || '').trim().toUpperCase();
-    if (code) rawSend({ t: 'whois', room: code });
+    const wanted = pendingWhois || code;
+    if (!wanted) return;
+    if (!rawSend({ t: 'join', room: wanted }) || !rawSend({ t: 'whois', room: wanted })) return;
+    pendingWhois = null;
   } catch (error) {}
 }
 
@@ -163,8 +179,8 @@ export function netRelay(key, value) {
 }
 
 export function netRequestRoom(code) {
-  if (!online || !code) return;
-  rawSend({ t: 'whois', room: String(code).trim().toUpperCase() });
+  if (!code) return;
+  requestRoomBootstrap(code);
 }
 
 export function netIsOnline() {

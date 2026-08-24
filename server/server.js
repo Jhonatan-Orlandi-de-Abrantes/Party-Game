@@ -99,6 +99,9 @@ wss.on('connection', socket => {
 
     if (msg.t === 'whois' && msg.room) {
       const room = normalizeRoom(msg.room);
+      // Quem pergunta precisa receber a resposta (relay do snapshot), entao
+      // inscrevemos o socket na sala antes de repassar a pergunta aos membros.
+      socket.roomCode = room;
       broadcastToRoom(socket, room, { t: 'whois', room });
       return;
     }

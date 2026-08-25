@@ -273,6 +273,12 @@ export function initGame() {
   if (rhythmMode) {
     beginRhythmSequence(1);
   }
+  const room = state.currentRoom;
+  if (room && room.players) {
+    room.preRoundScores = {};
+    room.players.forEach(p => { room.preRoundScores[p.id] = p.score || 0; });
+    saveRooms();
+  }
 }
 
 export function stepGame(dt) {
@@ -837,6 +843,22 @@ function finalizeRound() {
 function awardRoundPoints(result) {
   const room = state.currentRoom;
   if (!room || !result || !result.winnerId) return;
+  const preSnap = room.preRoundScores;
+  if (preSnap) {
+    const alreadyAwarded = room.players.some(p => preSnap[p.id] !== undefined && (p.score || 0) !== preSnap[p.id]);
+    if (alreadyAwarded) {
+      const ranked = [...room.players].sort((a, b) => (b.score || 0) - (a.score || 0));
+      result.scoreboard = ranked.map((player, position) => ({
+        id: player.id,
+        nickname: player.nickname,
+        color: player.color,
+        score: player.score || 0,
+        place: position + 1,
+        hat: player.hat || 'none'
+      }));
+      return;
+    }
+  }
   const players = [...room.players];
   const winner = players.find(player => player.id === result.winnerId);
   if (!winner) return;

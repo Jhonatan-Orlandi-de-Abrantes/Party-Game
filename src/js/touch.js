@@ -16,13 +16,47 @@ export const DEFAULT_TOUCH_LAYOUT = {
   right: [30, 72],
   jump: [77, 56],
   dash: [90, 72],
-  analog: [18, 72]
+  analog: [18, 72],
+  scale: 10,
+  buttonScales: {}
 };
 
 const controlsEl = $('touchControls');
 const editorEl = $('touchLayoutEditor');
 const editorStage = $('touchLayoutStage');
 let editorLayout = null;
+
+export function getTouchButtonScale() {
+  const layout = getTouchLayout();
+  return (layout && typeof layout.scale === 'number') ? layout.scale : DEFAULT_TOUCH_LAYOUT.scale;
+}
+
+function applyScaleToButton(el, scale, perButtonScale) {
+  if (!el || scale == null) return;
+  const s = (perButtonScale != null ? perButtonScale : scale) / 10;
+  if (el.classList.contains('touch-btn')) {
+    const base = el.classList.contains('touch-btn-action') ? 74 : 64;
+    const w = Math.round(base * s);
+    const h = Math.round(base * s);
+    el.style.width = w + 'px';
+    el.style.height = h + 'px';
+    if (el.classList.contains('touch-btn-action')) {
+      el.style.fontSize = Math.max(10, Math.round(12 * s)) + 'px';
+    }
+  } else if (el.classList.contains('touch-analog')) {
+    const w = Math.round(110 * s);
+    el.style.width = w + 'px';
+    el.style.height = w + 'px';
+    const knob = el.querySelector('.touch-analog-knob');
+    if (knob) {
+      const ks = Math.round(52 * s);
+      knob.style.width = ks + 'px';
+      knob.style.height = ks + 'px';
+      knob.style.marginLeft = (-ks / 2) + 'px';
+      knob.style.marginTop = (-ks / 2) + 'px';
+    }
+  }
+}
 
 function setPos(el, pos) {
   el.style.left = pos[0] + '%';
@@ -148,11 +182,22 @@ function rebuild() {
   if (!controlsEl) return;
   controlsEl.innerHTML = '';
   const mode = (state.gameState && state.gameState.mode) || null;
+  const layout = getTouchLayout() || DEFAULT_TOUCH_LAYOUT;
+  const scale = (typeof layout.scale === 'number') ? layout.scale : DEFAULT_TOUCH_LAYOUT.scale;
+  const bs = layout.buttonScales || {};
   if (mode === 'rhythm') {
     const row = document.createElement('div');
     row.className = 'touch-rhythm-row';
+    const rs = scale / 10;
+    row.style.gap = Math.round(14 * rs) + 'px';
     [['up', '&#9650;'], ['down', '&#9660;'], ['left', '&#9664;'], ['right', '&#9654;']].forEach(([dir, glyph]) => {
       const btn = makeButton('touch-btn touch-rhythm-btn', glyph);
+      const baseSize = 62;
+      const ps = bs[dir] != null ? bs[dir] : scale;
+      const sz = Math.round(baseSize * ps / 10);
+      btn.style.width = sz + 'px';
+      btn.style.height = sz + 'px';
+      btn.style.fontSize = Math.max(12, Math.round(22 * ps / 10)) + 'px';
       wireButton(btn, dir, setRhythmTouch);
       row.appendChild(btn);
     });
@@ -161,15 +206,19 @@ function rebuild() {
     return;
   }
   const style = getTouchStyle();
-  const layout = getTouchLayout() || DEFAULT_TOUCH_LAYOUT;
   if (style === 'analog') {
-    addAnalogJoystick(layout.analog || DEFAULT_TOUCH_LAYOUT.analog);
+    const joystick = addAnalogJoystick(layout.analog || DEFAULT_TOUCH_LAYOUT.analog);
+    applyScaleToButton(joystick, scale, bs.analog);
   } else {
-    addArrowButton('left', '&#9664;', layout.left || DEFAULT_TOUCH_LAYOUT.left);
-    addArrowButton('right', '&#9654;', layout.right || DEFAULT_TOUCH_LAYOUT.right);
+    const leftBtn = addArrowButton('left', '&#9664;', layout.left || DEFAULT_TOUCH_LAYOUT.left);
+    const rightBtn = addArrowButton('right', '&#9654;', layout.right || DEFAULT_TOUCH_LAYOUT.right);
+    applyScaleToButton(leftBtn, scale, bs.left);
+    applyScaleToButton(rightBtn, scale, bs.right);
   }
-  addActionButton('jump', 'JUMP', layout.jump || DEFAULT_TOUCH_LAYOUT.jump);
-  addActionButton('dash', currentActionLabel(), layout.dash || DEFAULT_TOUCH_LAYOUT.dash);
+  const jumpBtn = addActionButton('jump', 'JUMP', layout.jump || DEFAULT_TOUCH_LAYOUT.jump);
+  const dashBtn = addActionButton('dash', currentActionLabel(), layout.dash || DEFAULT_TOUCH_LAYOUT.dash);
+  applyScaleToButton(jumpBtn, scale, bs.jump);
+  applyScaleToButton(dashBtn, scale, bs.dash);
   builtMode = mode;
 }
 
@@ -216,14 +265,23 @@ function makeDraggable(el, key) {
   });
 }
 
-function rebuildEditor() {
+let selectedEditorButton = null;
+
+function rebuildEditor(preserveSelection) {
   if (!editorStage) return;
+  const prevSelection = preserveSelection ? selectedEditorButton : null;
   editorStage.innerHTML = '';
+  selectedEditorButton = null;
   const style = getTouchStyle();
+  const scale = (editorLayout && typeof editorLayout.scale === 'number') ? editorLayout.scale : DEFAULT_TOUCH_LAYOUT.scale;
+  const bs = (editorLayout && editorLayout.buttonScales) || {};
   const addDrag = (key, className, content) => {
     const el = editorButton(className, content);
+    el.dataset.key = key;
     setPos(el, editorLayout[key] || DEFAULT_TOUCH_LAYOUT[key]);
     makeDraggable(el, key);
+    applyScaleToButton(el, scale, bs[key]);
+    el.addEventListener('click', () => onEditorButtonClick(key));
     editorStage.appendChild(el);
   };
   if (style === 'analog') {
@@ -234,12 +292,73 @@ function rebuildEditor() {
   }
   addDrag('jump', 'touch-btn touch-btn-action', '<span>JUMP</span>');
   addDrag('dash', 'touch-btn touch-btn-action', '<span>DASH</span>');
+  if (prevSelection) {
+    selectedEditorButton = prevSelection;
+    const children = editorStage.children;
+    for (let i = 0; i < children.length; i++) {
+      children[i].classList.toggle('selected', children[i].dataset.key === selectedEditorButton);
+    }
+  }
+  refreshScaleSlider();
+}
+
+function onEditorButtonClick(key) {
+  if (selectedEditorButton === key) {
+    selectedEditorButton = null;
+  } else {
+    selectedEditorButton = key;
+  }
+  const children = editorStage.children;
+  for (let i = 0; i < children.length; i++) {
+    children[i].classList.toggle('selected', children[i].dataset.key === selectedEditorButton);
+  }
+  refreshScaleSlider();
+}
+
+function refreshScaleSlider() {
+  const scaleInput = $('touchLayoutScaleInput');
+  const scaleValue = $('touchLayoutScaleValue');
+  const scaleLabel = $('touchLayoutScaleLabel');
+  if (!scaleInput) return;
+  const bs = (editorLayout && editorLayout.buttonScales) || {};
+  const globalScale = (editorLayout && typeof editorLayout.scale === 'number') ? editorLayout.scale : DEFAULT_TOUCH_LAYOUT.scale;
+  const LABELS = { left: 'Esquerda', right: 'Direita', jump: 'Pular', dash: 'Ação', analog: 'Analógico' };
+  if (selectedEditorButton) {
+    const val = bs[selectedEditorButton] != null ? bs[selectedEditorButton] : globalScale;
+    scaleInput.value = val;
+    if (scaleValue) scaleValue.textContent = (val / 10).toFixed(1);
+    if (scaleLabel) scaleLabel.textContent = `Escala "${LABELS[selectedEditorButton] || selectedEditorButton}": `;
+    if (scaleValue && scaleLabel) { scaleLabel.appendChild(scaleValue); scaleLabel.appendChild(document.createTextNode('x')); }
+  } else {
+    scaleInput.value = globalScale;
+    if (scaleValue) scaleValue.textContent = (globalScale / 10).toFixed(1);
+    if (scaleLabel) scaleLabel.textContent = 'Escala dos botões: ';
+    if (scaleValue && scaleLabel) { scaleLabel.appendChild(scaleValue); scaleLabel.appendChild(document.createTextNode('x')); }
+  }
 }
 
 export function openLayoutEditor() {
   if (!editorEl || !editorStage) return;
   editorLayout = JSON.parse(JSON.stringify(getTouchLayout() || DEFAULT_TOUCH_LAYOUT));
+  if (typeof editorLayout.scale !== 'number') editorLayout.scale = DEFAULT_TOUCH_LAYOUT.scale;
+  if (!editorLayout.buttonScales) editorLayout.buttonScales = {};
+  selectedEditorButton = null;
   rebuildEditor();
+  const scaleInput = $('touchLayoutScaleInput');
+  const scaleValue = $('touchLayoutScaleValue');
+  if (scaleInput) {
+    scaleInput.oninput = () => {
+      const val = Number(scaleInput.value);
+      if (selectedEditorButton) {
+        if (!editorLayout.buttonScales) editorLayout.buttonScales = {};
+        editorLayout.buttonScales[selectedEditorButton] = val;
+      } else {
+        editorLayout.scale = val;
+      }
+      if (scaleValue) scaleValue.textContent = (val / 10).toFixed(1);
+      rebuildEditor(true);
+    };
+  }
   editorEl.classList.remove('hidden');
 }
 
@@ -256,7 +375,12 @@ export function initTouch() {
 
   if (confirmBtn) {
     confirmBtn.addEventListener('click', () => {
-      if (editorLayout) saveTouchLayout(editorLayout);
+      if (editorLayout) {
+        if (typeof editorLayout.scale !== 'number') editorLayout.scale = DEFAULT_TOUCH_LAYOUT.scale;
+        if (!editorLayout.buttonScales) editorLayout.buttonScales = {};
+        saveTouchLayout(editorLayout);
+      }
+      builtMode = null;
       closeLayoutEditor();
       playClick();
     });
@@ -265,6 +389,13 @@ export function initTouch() {
     resetBtn.addEventListener('click', () => {
       resetTouchLayout();
       editorLayout = JSON.parse(JSON.stringify(DEFAULT_TOUCH_LAYOUT));
+      selectedEditorButton = null;
+      const scaleInput = $('touchLayoutScaleInput');
+      const scaleValue = $('touchLayoutScaleValue');
+      if (scaleInput) {
+        scaleInput.value = DEFAULT_TOUCH_LAYOUT.scale;
+        if (scaleValue) scaleValue.textContent = (DEFAULT_TOUCH_LAYOUT.scale / 10).toFixed(1);
+      }
       rebuildEditor();
       playClick();
     });

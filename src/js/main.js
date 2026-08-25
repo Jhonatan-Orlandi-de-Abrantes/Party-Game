@@ -135,6 +135,7 @@ function startSimLoop() {
   state.accTime = 0;
   state.lastFrameTime = 0;
   if (state.gameState) state.gameState.lastTime = null;
+  invalidateClientCache();
   state.animationFrameId = requestAnimationFrame(gameLoop);
 }
 
@@ -142,6 +143,7 @@ function startRenderLoop() {
   if (state.animationFrameId) cancelAnimationFrame(state.animationFrameId);
   state.lastSeenRev = -1;
   state.lastFrameTime = 0;
+  invalidateClientCache();
   state.animationFrameId = requestAnimationFrame(clientRenderLoop);
 }
 
@@ -188,6 +190,13 @@ function confirmModalOpen() {
   return !!(refs.confirmModal && !refs.confirmModal.classList.contains('hidden'));
 }
 
+function allPlayersLocal() {
+  if (!state.currentRoom || !state.currentRoom.players) return false;
+  const localIds = new Set(state.localPlayerIds || []);
+  if (state.myPlayerId) localIds.add(state.myPlayerId);
+  return state.currentRoom.players.every(p => localIds.has(p.id));
+}
+
 function publishHeartbeat() {
   const now = Date.now();
   if (now - state.lastPublishTime >= PUBLISH_INTERVAL) {
@@ -196,6 +205,26 @@ function publishHeartbeat() {
     state.gameState.rev = (state.gameState.rev || 0) + 1;
     storage.publishGameState();
   }
+}
+
+let _clientCachedState = null;
+let _clientCachedRev = -1;
+
+function readGameStateCached() {
+  const st = storage.readGameState();
+  if (st && st.rev === _clientCachedRev && _clientCachedState) {
+    return _clientCachedState;
+  }
+  if (st) {
+    _clientCachedState = st;
+    _clientCachedRev = st.rev;
+  }
+  return st;
+}
+
+function invalidateClientCache() {
+  _clientCachedState = null;
+  _clientCachedRev = -1;
 }
 
 function syncMusicPause(st) {
@@ -229,7 +258,7 @@ function gameLoop(time) {
   }
   state.lastFrameTime = time;
 
-  if (confirmModalOpen()) {
+  if (confirmModalOpen() && allPlayersLocal()) {
     state.gameState.lastTime = time;
     publishHeartbeat();
     state.animationFrameId = requestAnimationFrame(gameLoop);
@@ -267,7 +296,7 @@ function clientRenderLoop() {
 
   updateTouchVisibility();
 
-  const st = storage.readGameState();
+  const st = readGameStateCached();
   const now = Date.now();
   playDeathSoundIfNew(st);
   syncMusicPause(st);
@@ -364,6 +393,10 @@ function enterGameScreen() {
 }
 
 function quitToLobby() {
+  if (document.fullscreenElement || document.webkitFullscreenElement) {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    if (exit) exit.call(document);
+  }
   stopSimLoop();
   stopGameWait();
   stopCountdown();
@@ -545,7 +578,8 @@ setResultsOverlayBackCallback(quitToLobby);
 
 refs.fullscreenBtn.addEventListener('click', () => {
   const el = document.documentElement;
-  if (document.fullscreenElement || document.webkitFullscreenElement) {
+  const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  if (isFullscreen) {
     const exit = document.exitFullscreen || document.webkitExitFullscreen;
     if (exit) exit.call(document);
     return;
@@ -553,6 +587,21 @@ refs.fullscreenBtn.addEventListener('click', () => {
   const request = el.requestFullscreen || el.webkitRequestFullscreen;
   if (request) request.call(el);
 });
+
+document.addEventListener('fullscreenchange', syncGameFullscreen);
+document.addEventListener('webkitfullscreenchange', syncGameFullscreen);
+
+function syncGameFullscreen() {
+  const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  const gameScreen = refs.screenGame;
+  if (!gameScreen) return;
+  gameScreen.classList.toggle('game-fullscreen', isFs && state.currentScreen === 'game');
+  if (refs.fullscreenBtn) {
+    refs.fullscreenBtn.classList.toggle('game-fullscreen-active', isFs && state.currentScreen === 'game');
+    refs.fullscreenBtn.textContent = isFs ? '⛶' : '⛶';
+    refs.fullscreenBtn.title = isFs ? 'Sair da tela cheia' : 'Tela cheia';
+  }
+}
 
 refs.gameQuitBtn.addEventListener('click', () => {
   showConfirm('Voltar para o lobby?', quitToLobby);

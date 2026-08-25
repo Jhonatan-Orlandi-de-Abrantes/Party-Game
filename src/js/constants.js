@@ -37,7 +37,7 @@ export const MAX_MAP_MUSIC_SIZE = 2500000;
 export const MAX_MAP_PLATFORMS = 60;
 export const MAP_EDITOR_WIDTH = 1080;
 export const MAP_EDITOR_HEIGHT = 540;
-export const PUBLISH_INTERVAL = 33;
+export const PUBLISH_INTERVAL = 50;
 export const HOST_TIMEOUT = 3000;
 
 export function uuid() {

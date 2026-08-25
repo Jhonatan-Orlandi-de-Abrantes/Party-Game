@@ -334,7 +334,10 @@ export function initUi() {
 
   refs.resetKeysBtn.addEventListener('click', () => {
     const player = getSettingsPlayer();
-    if (player) resetCustomKeys(player.id);
+    if (!player) return;
+    const isLocal = player.id === state.myPlayerId || (state.localPlayerIds || []).includes(player.id);
+    if (!isLocal) return;
+    resetCustomKeys(player.id);
     renderLobby();
   });
 
@@ -438,6 +441,8 @@ export function initUi() {
     btn.addEventListener('click', () => {
       const player = getSettingsPlayer();
       if (!player) return;
+      const isLocal = player.id === state.myPlayerId || (state.localPlayerIds || []).includes(player.id);
+      if (!isLocal) return;
       const label = btn.querySelector('span');
       if (!label || !btn.dataset.action) return;
       rebindingAction = btn.dataset.action;
@@ -2015,7 +2020,7 @@ function refreshControlAssignments() {
     if (!item) return;
     const old = item.querySelector('.control-assign');
     if (!old) return;
-    const canAssign = player.id === state.myPlayerId || isHost() || (state.localPlayerIds || []).includes(player.id);
+    const canAssign = player.id === state.myPlayerId || (state.localPlayerIds || []).includes(player.id);
     item.replaceChild(buildControlAssign(player, pads, canAssign), old);
   });
 }
@@ -2060,11 +2065,14 @@ export function renderSettings() {
   refs.sfxVolumeValue.textContent = String(sfx);
   if (refs.touchEnabledCheckbox) refs.touchEnabledCheckbox.checked = getTouchEnabled();
   if (refs.touchStyleSelect) refs.touchStyleSelect.value = getTouchStyle();
+  const isLocal = player.id === state.myPlayerId || (state.localPlayerIds || []).includes(player.id);
   document.querySelectorAll('.key-btn').forEach(btn => {
     const label = btn.querySelector('span');
     if (!label) return;
     if (!btn.classList.contains('recording')) label.textContent = getKeyLabel(player.id, btn.dataset.action);
+    btn.disabled = !isLocal;
   });
+  if (refs.resetKeysBtn) refs.resetKeysBtn.disabled = !isLocal;
 }
 
 export function renderLobby() {
@@ -2110,7 +2118,7 @@ export function renderLobby() {
         item.appendChild(score);
       }
 
-      const canAssign = player.id === state.myPlayerId || isHost() || (state.localPlayerIds || []).includes(player.id);
+    const canAssign = player.id === state.myPlayerId || (state.localPlayerIds || []).includes(player.id);
       item.appendChild(buildControlAssign(player, connectedGamepads(), canAssign));
 
       refs.playerList.appendChild(item);

@@ -917,6 +917,66 @@ input[type="range"]::-moz-range-thumb {
   right: 72px;
   background: #4dabf7;
 }
+#screen-game.game-fullscreen > .game-quit-btn {
+  position: fixed;
+  top: 12px;
+  z-index: 230;
+}
+#screen-game.game-fullscreen > #gameQuitBtn {
+  right: 12px;
+}
+#screen-game.game-fullscreen > #fullscreenBtn {
+  right: 68px;
+}
+
+/* Tela cheia no in-game: esconde tudo exceto o canvas */
+#screen-game.game-fullscreen {
+  padding: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  margin: 0 !important;
+  display: flex !important;
+  flex-direction: column;
+  overflow: hidden;
+  position: fixed !important;
+  inset: 0;
+  z-index: 200;
+  background: #000;
+}
+#screen-game.game-fullscreen .card,
+#screen-game.game-fullscreen > .hud-row,
+#screen-game.game-fullscreen > .game-header {
+  display: none !important;
+}
+#screen-game.game-fullscreen #game-area {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+#screen-game.game-fullscreen #gameCanvas {
+  width: min(100vw, calc(100vh * 2));
+  height: min(100vh, calc(100vw / 2));
+  border: none !important;
+  border-radius: 0 !important;
+}
+#screen-game.game-fullscreen .touch-controls {
+  inset: 0;
+}
+#screen-game.game-fullscreen .game-alerts {
+  top: 8px;
+  left: 8px;
+  z-index: 210;
+}
+#screen-game.game-fullscreen .message-box {
+  z-index: 220;
+}
+.fullscreen-toggle.game-fullscreen-active {
+  background: #2ecc40;
+}
 
 .countdown-overlay {
   position: fixed;
@@ -1292,6 +1352,25 @@ input[type="range"]::-moz-range-thumb {
   cursor: grabbing;
   background: rgba(255, 210, 63, 0.85);
   color: #222;
+}
+.touch-layout-stage .touch-btn.selected,
+.touch-layout-stage .touch-analog.selected {
+  outline: 3px solid #ffd23f;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 6px rgba(255, 210, 63, 0.45);
+}
+.touch-layout-scale-row {
+  margin: 10px 0;
+  text-align: center;
+}
+.touch-layout-scale-row label {
+  display: block;
+  font-weight: 800;
+  margin-bottom: 6px;
+  font-size: 0.95rem;
+}
+.touch-layout-scale-row input[type="range"] {
+  width: 100%;
 }
 
 /* ---- Results overlay (Kahoot-style) ---- */
@@ -1862,11 +1941,41 @@ input[type="range"]::-moz-range-thumb {
     overscroll-behavior: contain;
   }
 
-  /* Partida: header/HUD mais compactos */
-  #gameCanvas { border-width: 3px; }
-  .game-header { margin-bottom: 8px; }
+  /* Partida: canvas maior em retrato — preenche a largura e a altura
+     disponível (descontando header + HUD + padding) */
+  #screen-game { padding: 0; overflow: hidden; touch-action: none; }
+  #gameCanvas {
+    border-width: 3px;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 2 / 1;
+  }
+  #screen-game .game-header { margin-bottom: 4px; }
+  .game-header { margin-bottom: 4px; }
   .hud-panel { padding: 6px 10px; }
+  .hud-row { margin-top: 6px; }
   .status-line { font-size: 0.85rem; }
+  .game-quit-btn { top: 8px; right: 8px; width: 40px; height: 40px; font-size: 1rem; }
+  .fullscreen-toggle { right: 56px; }
+  #screen-game .hud-row { display: none; }
+
+  /* Ajuste da aba de configs: preenche toda a viewport em retrato */
+  .settings-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(420px, 92%);
+    display: flex;
+    flex-direction: column;
+  }
+  .settings-scroll {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    min-height: 0;
+  }
 
   /* Botões de toque proporcionais */
   .touch-btn { width: 54px; height: 54px; }
@@ -1876,20 +1985,20 @@ input[type="range"]::-moz-range-thumb {
   .touch-rhythm-row { gap: 10px; bottom: 12px; }
 }
 
-/* Celular DEITADO (paisagem): o canvas da partida nunca sai da tela */
+/* Celular DEITADO (paisagem): o canvas da partida preenche a tela */
 @media (max-height: 540px) {
+  #screen-game { overflow: hidden; touch-action: none; }
   #gameCanvas {
     width: auto;
-    height: calc(100vh - 118px);
-    height: calc(100dvh - 118px);
+    height: calc(100dvh - 100px);
     max-width: 100%;
     margin: 0 auto;
   }
-  .game-header { margin-bottom: 4px; }
-  .hud-row { gap: 8px; margin-top: 6px; }
-  .hud-panel { flex: 1 1 140px; min-width: 140px; padding: 4px 8px; }
-  .hud-panel strong { font-size: 0.75rem; margin-bottom: 2px; }
-  .status-line { font-size: 0.72rem; margin-top: 2px; }
+  .game-header { margin-bottom: 2px; }
+  .hud-row { gap: 6px; margin-top: 4px; }
+  .hud-panel { flex: 1 1 140px; min-width: 140px; padding: 3px 8px; }
+  .hud-panel strong { font-size: 0.72rem; margin-bottom: 1px; }
+  .status-line { font-size: 0.68rem; margin-top: 1px; }
 }
 
 /* ============================================================

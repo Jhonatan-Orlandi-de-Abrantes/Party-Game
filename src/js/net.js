@@ -172,9 +172,25 @@ export function initNet() {
   membershipTimer = setInterval(syncMembership, MEMBERSHIP_SYNC_MS);
 }
 
+const relayPending = new Map();
+let relayTimer = null;
+
+function flushRelay() {
+  relayTimer = null;
+  for (const [key, value] of relayPending) {
+    rawSend({ t: 'relay', key, value });
+  }
+  relayPending.clear();
+}
+
 export function netRelay(key, value) {
   if (!online) return;
   syncMembership();
+  if (key && key.startsWith('bombPartyGame_')) {
+    relayPending.set(key, value);
+    if (!relayTimer) relayTimer = setTimeout(flushRelay, 16);
+    return;
+  }
   rawSend({ t: 'relay', key, value });
 }
 

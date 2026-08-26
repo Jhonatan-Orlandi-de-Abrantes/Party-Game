@@ -1989,7 +1989,7 @@ function buildControlAssign(player, pads, canAssign) {
   const touchOn = getTouchEnabled();
   const keyboardOption = document.createElement('option');
   keyboardOption.value = '-1';
-  keyboardOption.textContent = 'Teclado';
+  keyboardOption.textContent = '⌨️ Teclado';
   ctrlSelect.appendChild(keyboardOption);
   if (touchOn) {
     const touchOption = document.createElement('option');

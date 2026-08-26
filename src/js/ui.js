@@ -1,4 +1,4 @@
-import { GAME_MODES, DEFAULT_ROOM_SETTINGS, PLAYER_WIDTH, PLAYER_HEIGHT, SPAWN_COLORS, MAX_MAP_PLATFORMS, uuid, TOUCH_ASSIGNMENT } from './constants.js';
+import { GAME_MODES, DEFAULT_ROOM_SETTINGS, PLAYER_WIDTH, PLAYER_HEIGHT, SPAWN_COLORS, MAX_SPAWNS, MAX_MAP_PLATFORMS, uuid, TOUCH_ASSIGNMENT } from './constants.js';
 import { getPlayableMaps, playableMapKey } from './maps.js';
 import { state, getMyPlayer, isHost, saveLocalPlayers } from './state.js';
 import * as rooms from './rooms.js';
@@ -1808,7 +1808,7 @@ function sanitizeLobbyPlatform(raw) {
 
 function sanitizeLobbySpawns(raw) {
   if (!Array.isArray(raw)) return [];
-  return raw.slice(0, 4).map(spawn => ({
+  return raw.slice(0, MAX_SPAWNS).map(spawn => ({
     x: clampMapNumber(spawn && spawn.x, 0, 1080),
     y: clampMapNumber(spawn && spawn.y, 0, 540)
   }));
@@ -2214,7 +2214,7 @@ function renderScoreboard(board) {
   }
   refs.scoreboard.classList.remove('hidden');
   const sorted = [...board].sort((a, b) => (b.score || 0) - (a.score || 0));
-  const places = ['1º', '2º', '3º', '4º'];
+  const places = ['1º', '2º', '3º', '4º', '5º', '6º', '7º', '8º'];
   refs.scoreboardList.innerHTML = '';
   sorted.forEach((entry, index) => {
     const li = document.createElement('li');
@@ -2281,6 +2281,10 @@ export function showResultsOverlay(result) {
 
   const board = result.scoreboard || [];
   const sorted = [...board].sort((a, b) => (b.score || 0) - (a.score || 0));
+  const podCount = sorted.length;
+  const podWidth = podCount <= 4 ? 700 : podCount <= 6 ? 850 : 1000;
+  const resultsBox = refs.resultsOverlay.querySelector('.results-box');
+  if (resultsBox) resultsBox.style.width = `min(${podWidth}px, 95%)`;
   refs.resultsPodium.innerHTML = '';
   sorted.forEach((entry, idx) => {
     const placeDiv = document.createElement('div');

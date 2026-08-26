@@ -1488,6 +1488,18 @@ input[type="range"]::-moz-range-thumb {
 .results-podium-4 {
   order: 4;
 }
+.results-podium-5 {
+  order: 5;
+}
+.results-podium-6 {
+  order: 6;
+}
+.results-podium-7 {
+  order: 7;
+}
+.results-podium-8 {
+  order: 8;
+}
 .results-podium .results-place:first-child .results-char {
   width: 84px;
   height: 88px;

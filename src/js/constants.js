@@ -98,8 +98,8 @@ export const RHYTHM_SLAM_SPEED = 1500;
 export const RHYTHM_RISE_SPEED = 110;
 export const RHYTHM_NEXT_DELAY = 1;
 export const RHYTHM_ARROW_COLORS = { up: '#51cf66', down: '#22d3ee', left: '#c24b99', right: '#f9393f' };
-export const MAX_SPAWNS = 4;
-export const SPAWN_COLORS = ['#ff6b6b', '#4dabf7', '#51cf66', '#ff922b'];
+export const MAX_SPAWNS = 8;
+export const SPAWN_COLORS = ['#ff6b6b', '#4dabf7', '#51cf66', '#ff922b', '#cc5de8', '#20c997', '#f06595', '#845ef7'];
 export const TRAIL_LIFE = 0.35;
 
 // ============================================================================
@@ -177,6 +177,10 @@ export function getWarWeapon(id) {
 }
 
 export const controlSets = [
+  { left: 'a', right: 'd', jump: ' ', dash: 'shift' },
+  { left: 'a', right: 'd', jump: ' ', dash: 'shift' },
+  { left: 'a', right: 'd', jump: ' ', dash: 'shift' },
+  { left: 'a', right: 'd', jump: ' ', dash: 'shift' },
   { left: 'a', right: 'd', jump: ' ', dash: 'shift' },
   { left: 'a', right: 'd', jump: ' ', dash: 'shift' },
   { left: 'a', right: 'd', jump: ' ', dash: 'shift' },

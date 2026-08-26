@@ -678,14 +678,30 @@ function drawEgg(x, y, w, h) {
 
 function drawEggScores(gs) {
   const time = gs.time || 0;
-  const corners = [
-    { x: 12, y: 12, align: 'left' },
-    { x: 1068, y: 12, align: 'right' },
-    { x: 12, y: 528, align: 'left', bottom: true },
-    { x: 1068, y: 528, align: 'right', bottom: true }
-  ];
+  const count = gs.players.length;
+  let positions;
+  if (count <= 4) {
+    positions = [
+      { x: 12, y: 12, align: 'left' },
+      { x: 1068, y: 12, align: 'right' },
+      { x: 12, y: 528, align: 'left', bottom: true },
+      { x: 1068, y: 528, align: 'right', bottom: true }
+    ];
+  } else {
+    const topCount = Math.ceil(count / 2);
+    const bottomCount = count - topCount;
+    positions = [];
+    const spacing = 1080 / (topCount + 1);
+    for (let i = 0; i < topCount; i++) {
+      positions.push({ x: spacing * (i + 1), y: 12, align: 'center' });
+    }
+    const bottomSpacing = 1080 / (bottomCount + 1);
+    for (let i = 0; i < bottomCount; i++) {
+      positions.push({ x: bottomSpacing * (i + 1), y: 528, align: 'center', bottom: true });
+    }
+  }
   gs.players.forEach((player, index) => {
-    const corner = corners[index % corners.length];
+    const pos = positions[index % positions.length];
     const score = player.eggScore || 0;
     const text = String(score);
     ctx.font = '16px "Press Start 2P", "Trebuchet MS", monospace';
@@ -694,8 +710,11 @@ function drawEggScores(gs) {
     const nameW = ctx.measureText(player.nickname).width;
     const boxW = Math.max(scoreW, nameW) + 22;
     const boxH = 46;
-    const boxX = corner.align === 'left' ? corner.x : corner.x - boxW;
-    const boxY = corner.bottom ? corner.y - boxH : corner.y;
+    let boxX;
+    if (pos.align === 'left') boxX = pos.x;
+    else if (pos.align === 'right') boxX = pos.x - boxW;
+    else boxX = pos.x - boxW / 2;
+    const boxY = pos.bottom ? pos.y - boxH : pos.y;
 
     ctx.globalAlpha = player.alive ? 1 : 0.35;
     ctx.fillStyle = 'rgba(0,0,0,0.55)';

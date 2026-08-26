@@ -139,13 +139,16 @@ export function initGame() {
   const warMode = isWarMode();
   const chosenMap = selectMapFromPool(getPlayableMaps(gameMode()));
   const spawns = Array.isArray(chosenMap.spawns) ? chosenMap.spawns : [];
+  const playerCount = state.currentRoom.players.length;
+  const margin = 60;
+  const fallbackSpacing = playerCount > 1 ? (1080 - 2 * margin) / (playerCount - 1) : 0;
   const players = state.currentRoom.players.map((player, index) => {
     const spawn = spawns[index];
     return {
       id: player.id,
       nickname: player.nickname,
       color: player.color,
-      x: spawn && Number.isFinite(spawn.x) ? spawn.x : 120 + index * 180,
+      x: spawn && Number.isFinite(spawn.x) ? spawn.x : (playerCount > 1 ? margin + index * fallbackSpacing : 540),
       y: spawn && Number.isFinite(spawn.y) ? spawn.y : 320,
       vx: 0,
       vy: 0,
@@ -894,9 +897,9 @@ function awardRoundPoints(result) {
     }
     ranked = [winner, ...rest];
   }
-  const n = ranked.length;
   ranked.forEach((player, position) => {
-    player.score = (player.score || 0) + (n - position);
+    const pts = position === 0 ? 4 : position === 1 ? 3 : position === 2 ? 2 : 1;
+    player.score = (player.score || 0) + pts;
   });
   saveRooms();
   result.scoreboard = ranked.map((player, position) => {

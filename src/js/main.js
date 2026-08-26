@@ -641,6 +641,15 @@ window.addEventListener('bombparty:resolutionchange', () => {
 document.addEventListener('keydown', input.onKeyDown);
 document.addEventListener('keyup', input.onKeyUp);
 
+document.addEventListener('keydown', event => {
+  if (event.key === ' ') {
+    const tag = (event.target && event.target.tagName) || '';
+    if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT' && !event.target.isContentEditable) {
+      event.preventDefault();
+    }
+  }
+});
+
 const KEY_ASSIGN_IGNORED_RE = /^(f\d{1,2}|tab|escape|capslock|numlock|scrolllock|contextmenu|meta|alt|control|shift|insert|home|end|pageup|pagedown|printscreen|pause|dead)$/i;
 
 function tryOpenKeyboardAssign(event) {

@@ -167,6 +167,8 @@ export function heartbeat() {
 export function cleanupStalePlayers() {
   state.rooms = loadRooms();
   const now = Date.now();
+  const myDeviceId = getDeviceId();
+  const myLocalIds = new Set(state.localPlayerIds || []);
   let changed = false;
   let droppedCurrent = false;
   const removedPlayers = [];
@@ -175,12 +177,13 @@ export function cleanupStalePlayers() {
     const isCurrent = state.currentRoom && state.currentRoom.code === code;
     const before = room.players.length;
     room.players = room.players.filter(player => {
-      const keep = now - (player.lastSeen || 0) < STALE_TIMEOUT;
-      if (!keep) {
+      if (now - (player.lastSeen || 0) < STALE_TIMEOUT) return true;
+      if (player.deviceId === myDeviceId || myLocalIds.has(player.id)) {
         removePlayerInput(player.id);
         if (isCurrent) removedPlayers.push(player);
+        return false;
       }
-      return keep;
+      return true;
     });
     if (room.players.length !== before) changed = true;
     if (room.players.length === 0) {

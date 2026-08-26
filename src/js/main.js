@@ -1,5 +1,5 @@
 import { STORAGE_KEY, HOST_TIMEOUT, PUBLISH_INTERVAL, COUNTDOWN_SECONDS, WAR_SHOT_SOUNDS, WAR_GUNLOAD_SOUNDS } from './constants.js';
-import { state, getMyPlayer, isHost } from './state.js';
+import { state, getMyPlayer, isHost, saveLocalPlayers } from './state.js';
 import * as storage from './storage.js';
 import * as rooms from './rooms.js';
 import * as net from './net.js';
@@ -26,6 +26,7 @@ import {
   formatControls,
   formatGamepadControls,
   showConfirm,
+  showKickModal,
   closeSettingsPanel,
   startCountdown,
   stopCountdown,
@@ -724,6 +725,8 @@ function handleStorageSync(event) {
   if (!changedKey || changedKey !== STORAGE_KEY) return;
   const previousSignature = rooms.roomSignature(state.currentRoom);
   const previousPlayers = state.currentRoom ? [...state.currentRoom.players] : null;
+  const wasInRoom = !!state.currentRoom;
+  const myIdBeforeSync = state.myPlayerId;
   storage.syncRooms();
   const newSignature = rooms.roomSignature(state.currentRoom);
   if (newSignature === previousSignature) return;
@@ -751,11 +754,19 @@ function handleStorageSync(event) {
     }
   }
 
-  if (!state.currentRoom) {
+  const amIStillInRoom = state.currentRoom && state.currentRoom.players.some(p => p.id === myIdBeforeSync);
+  if (!state.currentRoom || (wasInRoom && myIdBeforeSync && !amIStillInRoom)) {
     state.myRoomCode = null;
     state.myPlayerId = null;
+    state.localPlayerIds = [];
+    saveLocalPlayers([]);
+    sessionStorage.removeItem('bombPartyRoom');
+    sessionStorage.removeItem('bombPartyPlayerId');
     audio.playMenuMusic();
     showScreen('welcome');
+    if (wasInRoom && myIdBeforeSync) {
+      showKickModal('Você foi removido da sala.');
+    }
     return;
   }
   if (state.currentScreen === 'game') {

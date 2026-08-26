@@ -113,6 +113,10 @@ export const refs = {
   confirmText: $('confirmText'),
   confirmOkBtn: $('confirmOkBtn'),
   confirmCancelBtn: $('confirmCancelBtn'),
+  kickModal: $('kickModal'),
+  kickModalTitle: $('kickModalTitle'),
+  kickModalText: $('kickModalText'),
+  kickModalCloseBtn: $('kickModalCloseBtn'),
   gameQuitBtn: $('gameQuitBtn'),
   fullscreenBtn: $('fullscreenBtn'),
   countdownOverlay: $('countdownOverlay'),
@@ -302,6 +306,11 @@ export function initUi() {
   });
   refs.confirmCancelBtn.addEventListener('click', () => {
     hideConfirm();
+    playClick();
+  });
+
+  refs.kickModalCloseBtn.addEventListener('click', () => {
+    hideKickModal();
     playClick();
   });
 
@@ -1302,6 +1311,15 @@ export function hideConfirm() {
   refs.confirmModal.classList.add('hidden');
 }
 
+export function showKickModal(text) {
+  refs.kickModalText.textContent = text || 'Você foi removido da sala.';
+  refs.kickModal.classList.remove('hidden');
+}
+
+export function hideKickModal() {
+  refs.kickModal.classList.add('hidden');
+}
+
 let selectPopupCallback = null;
 
 export function openSelectPopup(title, options, callback) {
@@ -2075,6 +2093,13 @@ export function renderSettings() {
   if (refs.resetKeysBtn) refs.resetKeysBtn.disabled = !isLocal;
 }
 
+function kickPlayer(playerId, nickname) {
+  if (!isHost() || !state.myRoomCode) return;
+  rooms.removePlayerFromRoom(state.myRoomCode, playerId, false);
+  showLobbyAlert(`${nickname} foi removido da sala.`, 'error');
+  renderLobby();
+}
+
 export function renderLobby() {
   const room = state.currentRoom;
   if (!room) return;
@@ -2120,6 +2145,15 @@ export function renderLobby() {
 
     const canAssign = player.id === state.myPlayerId || (state.localPlayerIds || []).includes(player.id);
       item.appendChild(buildControlAssign(player, connectedGamepads(), canAssign));
+
+      if (isHost() && !player.host) {
+        const kickBtn = document.createElement('button');
+        kickBtn.className = 'kick-btn';
+        kickBtn.title = `Remover ${player.nickname} da sala`;
+        kickBtn.textContent = '×';
+        kickBtn.addEventListener('click', () => kickPlayer(player.id, player.nickname));
+        item.appendChild(kickBtn);
+      }
 
       refs.playerList.appendChild(item);
     });

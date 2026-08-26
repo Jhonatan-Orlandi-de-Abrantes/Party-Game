@@ -466,6 +466,26 @@ input[type="range"]::-moz-range-thumb {
 }
 .player-badge { display: inline-flex; align-items: center; gap: 8px; }
 .color-dot { width: 16px; height: 16px; border: 2px solid #222; border-radius: 4px; display: inline-block; }
+.kick-btn {
+  background: #e63946;
+  color: #fff;
+  border: 2px solid #222;
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 3px 3px 0 #222;
+  transition: transform .06s ease, box-shadow .06s ease;
+  flex-shrink: 0;
+}
+.kick-btn:hover { box-shadow: 4px 4px 0 #222; }
+.kick-btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #222; }
 .player-list li.player-pop {
   animation: playerPop .55s cubic-bezier(.34,1.56,.64,1);
 }

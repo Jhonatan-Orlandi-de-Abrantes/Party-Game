@@ -385,6 +385,7 @@ function enterGameScreen() {
   applyResolution();
   audio.playGameMusic(state.gameState && state.gameState.map, state.gameState && state.gameState.mode);
   showScreen('game');
+  syncGameFullscreen();
   input.publishLocalInputs();
   if (document.visibilityState === 'visible') {
     becomeSimulator();

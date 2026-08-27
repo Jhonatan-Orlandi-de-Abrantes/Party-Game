@@ -928,14 +928,20 @@ input[type="range"]::-moz-range-thumb {
   background: #ff6b6b;
   color: #fff;
   box-shadow: 3px 3px 0 #222;
-  z-index: 15;
+  z-index: 50;
 }
 .game-quit-btn:hover { box-shadow: 4px 4px 0 #222; }
 .game-quit-btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #222; }
 
 .fullscreen-toggle {
-  right: 72px;
   background: #4dabf7;
+  right: 68px;
+}
+.fullscreen-toggle.game-fullscreen-active {
+  right: 68px;
+  top: 12px;
+  z-index: 231 !important;
+  background: #2ecc40;
 }
 #screen-game.game-fullscreen > .game-quit-btn {
   position: fixed;
@@ -944,9 +950,6 @@ input[type="range"]::-moz-range-thumb {
 }
 #screen-game.game-fullscreen > #gameQuitBtn {
   right: 12px;
-}
-#screen-game.game-fullscreen > #fullscreenBtn {
-  right: 68px;
 }
 
 /* Tela cheia no in-game: esconde tudo exceto o canvas */
@@ -993,9 +996,6 @@ input[type="range"]::-moz-range-thumb {
 }
 #screen-game.game-fullscreen .message-box {
   z-index: 220;
-}
-.fullscreen-toggle.game-fullscreen-active {
-  background: #2ecc40;
 }
 
 .countdown-overlay {

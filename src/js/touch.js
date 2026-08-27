@@ -34,7 +34,19 @@ export function getTouchButtonScale() {
 function applyScaleToButton(el, scale, perButtonScale) {
   if (!el || scale == null) return;
   const s = (perButtonScale != null ? perButtonScale : scale) / 10;
-  if (el.classList.contains('touch-btn')) {
+  if (el.classList.contains('touch-analog')) {
+    const w = Math.round(110 * s);
+    el.style.width = w + 'px';
+    el.style.height = w + 'px';
+    const knob = el.querySelector('.touch-analog-knob') || el.querySelector('.touch-analog-knob-edit');
+    if (knob) {
+      const ks = Math.round(52 * s);
+      knob.style.width = ks + 'px';
+      knob.style.height = ks + 'px';
+      knob.style.marginLeft = (-ks / 2) + 'px';
+      knob.style.marginTop = (-ks / 2) + 'px';
+    }
+  } else if (el.classList.contains('touch-btn')) {
     const base = el.classList.contains('touch-btn-action') ? 74 : 64;
     const w = Math.round(base * s);
     const h = Math.round(base * s);
@@ -42,18 +54,6 @@ function applyScaleToButton(el, scale, perButtonScale) {
     el.style.height = h + 'px';
     if (el.classList.contains('touch-btn-action')) {
       el.style.fontSize = Math.max(10, Math.round(12 * s)) + 'px';
-    }
-  } else if (el.classList.contains('touch-analog')) {
-    const w = Math.round(110 * s);
-    el.style.width = w + 'px';
-    el.style.height = w + 'px';
-    const knob = el.querySelector('.touch-analog-knob');
-    if (knob) {
-      const ks = Math.round(52 * s);
-      knob.style.width = ks + 'px';
-      knob.style.height = ks + 'px';
-      knob.style.marginLeft = (-ks / 2) + 'px';
-      knob.style.marginTop = (-ks / 2) + 'px';
     }
   }
 }

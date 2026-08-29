@@ -46,7 +46,7 @@ A princípio esse projeto era pra ser só um simples jogo com salas, players e u
 | 🗺️ Mapas | Nativos + editor de mapas próprio |
 | 👕 Cosméticos | Editor com imagem ou código JS |
 
-## 🚀 Rodando o jogo
+## 🚀 Rodar o jogo localmente:
 
 ```bash
 # Modo simples (mesmo navegador, várias abas):
@@ -57,9 +57,6 @@ cd server
 npm install
 npm start          # → http://localhost:3000
 ```
-
-Para publicar na internet com o multiplayer funcionando, siga o guia
-passo a passo do **[COMO-HOSPEDAR.md](COMO-HOSPEDAR.md)**.
 
 ## 📚 Documentação
 

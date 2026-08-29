@@ -64,7 +64,3 @@ Tudo sobre arquitetura, modos, power-ups e código está no
 **[DOCUMENTACAO.md](DOCUMENTACAO.md)**.
 
 ---
-
-<div align="center">
-<sub>Feito com ❤️, canvas e muito café ☕</sub>
-</div>

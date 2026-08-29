@@ -13,6 +13,7 @@ let sentRoom = null;
 let reconnectTimer = null;
 let membershipTimer = null;
 let pendingWhois = null;
+let offlineRelays = new Map();
 
 function externalBase() {
   try {
@@ -117,6 +118,7 @@ function connect() {
     sentRoom = null;
     syncMembership();
     prefillWhois();
+    flushOfflineRelays();
     console.info('[net] Conectado ao servidor online.');
   };
   ws.onmessage = event => {
@@ -184,7 +186,13 @@ function flushRelay() {
 }
 
 export function netRelay(key, value) {
-  if (!online) return;
+  if (!online) {
+    // Offline: guarda a ultima escrita por chave e reenvia na proxima conexao.
+    // Sem isso, entrar na sala durante uma reconexao perdia o relay e o host
+    // demorava a saber do jogador (que acabava sendo removido pelo heartbeat).
+    if (key && typeof key === 'string') offlineRelays.set(key, value);
+    return;
+  }
   syncMembership();
   if (key && key.startsWith('bombPartyGame_')) {
     relayPending.set(key, value);
@@ -192,6 +200,21 @@ export function netRelay(key, value) {
     return;
   }
   rawSend({ t: 'relay', key, value });
+}
+
+function flushOfflineRelays() {
+  if (!online || offlineRelays.size === 0) return;
+  syncMembership();
+  const items = [...offlineRelays.entries()];
+  offlineRelays.clear();
+  for (const [key, value] of items) {
+    if (key && key.startsWith('bombPartyGame_')) {
+      relayPending.set(key, value);
+    } else {
+      rawSend({ t: 'relay', key, value });
+    }
+  }
+  if (relayPending.size > 0 && !relayTimer) relayTimer = setTimeout(flushRelay, 16);
 }
 
 export function netRequestRoom(code) {

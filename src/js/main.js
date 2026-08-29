@@ -737,6 +737,21 @@ function handleStorageSync(event) {
   const previousPlayers = state.currentRoom ? [...state.currentRoom.players] : null;
   const wasInRoom = !!state.currentRoom;
   const myIdBeforeSync = state.myPlayerId;
+  const incomingRaw = typeof event.newValue === 'string' ? event.newValue : localStorage.getItem(STORAGE_KEY);
+  if (incomingRaw) {
+    let incomingRooms = null;
+    try {
+      incomingRooms = JSON.parse(incomingRaw);
+    } catch (error) {
+      incomingRooms = null;
+    }
+    if (Array.isArray(incomingRooms)) {
+      try {
+        const merged = storage.mergeRooms(state.rooms, incomingRooms);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+      } catch (error) {}
+    }
+  }
   storage.syncRooms();
   const newSignature = rooms.roomSignature(state.currentRoom);
   if (newSignature === previousSignature) return;

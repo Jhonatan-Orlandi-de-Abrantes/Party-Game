@@ -28,10 +28,10 @@ export function createRoom(nickname, maxPlayers, mode = 'local') {
   const player = { id: playerId, nickname, color: randomColor(), host: true, joinedAt: Date.now(), lastSeen: Date.now(), deviceId, hat: getHat(deviceId), cosmetics: getEquippedCosmetics(), score: 0 };
   const room = { code, players: [player], maxPlayers, started: false, ownerId: playerId, createdAt: Date.now(), mode, settings: { ...DEFAULT_ROOM_SETTINGS }, mapSelection: null };
   state.rooms.push(room);
-  saveRooms();
   state.myPlayerId = playerId;
   state.myRoomCode = room.code;
   state.currentRoom = room;
+  saveRooms();
   saveLocalPlayers([playerId]);
   sessionStorage.setItem('bombPartyRoom', room.code);
   sessionStorage.setItem('bombPartyPlayerId', playerId);
@@ -52,10 +52,10 @@ export function joinRoom(nickname, code) {
   const deviceId = getDeviceId();
   const player = { id: playerId, nickname, color: randomColor(), host: false, joinedAt: Date.now(), lastSeen: Date.now(), deviceId, hat: getHat(deviceId), cosmetics: getEquippedCosmetics(), score: 0 };
   room.players.push(player);
-  saveRooms();
   state.myPlayerId = playerId;
   state.myRoomCode = room.code;
   state.currentRoom = room;
+  saveRooms();
   saveLocalPlayers([playerId]);
   sessionStorage.setItem('bombPartyRoom', room.code);
   sessionStorage.setItem('bombPartyPlayerId', playerId);

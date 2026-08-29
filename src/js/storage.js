@@ -35,12 +35,39 @@ export function loadRooms() {
 
 export function saveRooms() {
   try {
+    if (state.myRoomCode) {
+      const mine = state.rooms.find(room => room && room.code === state.myRoomCode);
+      if (mine) {
+        mine._t = Math.max(Date.now(), (Number(mine._t) || 0) + 1);
+      }
+    }
     const raw = JSON.stringify(state.rooms);
     localStorage.setItem(STORAGE_KEY, raw);
     netRelay(STORAGE_KEY, raw);
   } catch (error) {
     console.warn('Não foi possível salvar as salas (armazenamento cheio?):', error);
   }
+}
+
+// Mistura duas listas de salas mantendo a versão mais recente (_t) de cada sala.
+// Sem isso, um snapshot antigo (ex.: o host sem o jogador recém-entrado) podia
+// chegar DEPOIS da entrada e apagar o jogador do estado local na hora.
+// Kicks legítimos continuam funcionando porque produzem um _t mais novo.
+export function mergeRooms(localRooms, incomingRooms) {
+  const base = Array.isArray(localRooms) ? localRooms : [];
+  const incoming = Array.isArray(incomingRooms) ? incomingRooms : [];
+  const byCode = new Map();
+  base.forEach(room => {
+    if (room && room.code) byCode.set(room.code, room);
+  });
+  incoming.forEach(room => {
+    if (!room || !room.code) return;
+    const local = byCode.get(room.code);
+    const localT = Number(local && local._t) || 0;
+    const incomingT = Number(room._t) || 0;
+    if (!local || incomingT > localT) byCode.set(room.code, room);
+  });
+  return [...byCode.values()];
 }
 
 export function syncRooms() {

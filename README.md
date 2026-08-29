@@ -33,7 +33,7 @@ A princípio esse projeto era pra ser só um simples jogo com salas, players e u
 
 ## 🎮 Como jogar
 
-1. Abra o jogo (local ou pelo link hospedado);
+1. Abra o jogo;
 2. **Crie a sala** e compartilhe o código — ou o link de convite;
 3. Cada jogador escolhe Teclado / Controle / Toque;
 4. O host inicia: são 5 modos misturados numa mesma party!

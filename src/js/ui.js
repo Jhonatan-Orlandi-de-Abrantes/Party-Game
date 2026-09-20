@@ -796,14 +796,13 @@ export function getFocusables() {
   });
   if (scope === document.getElementById('screen-lobby') && !modal && !popup && !refs.settingsPanel.classList.contains('open')) {
     const gear = refs.settingsGearBtn;
-    const startBtn = refs.startGameBtn;
-    const inviteBtn = refs.inviteBtn;
-    const leaveBtn = refs.leaveRoomBtn;
-    const btns = [startBtn, inviteBtn, leaveBtn].filter(b => list.indexOf(b) >= 0);
-    const chips = list.filter(el => el.classList.contains('lobby-mode-chip'));
     const hostCfg = refs.hostConfigBtn && list.indexOf(refs.hostConfigBtn) >= 0 ? refs.hostConfigBtn : null;
-    const selects = list.filter(el => el.tagName === 'SELECT');
-    list = [...(gear ? [gear] : []), ...(hostCfg ? [hostCfg] : []), ...chips, ...selects, ...btns];
+    const chips = list.filter(el => el.classList.contains('lobby-mode-chip'));
+    // O resto mantém a ordem do DOM: assim o seletor de controle de cada
+    // jogador vem logo antes do botão ✕ daquele jogador (bloco a bloco),
+    // em vez de os ✕ ficarem todos agrupados depois de "Sair".
+    const rest = list.filter(el => el !== gear && el !== hostCfg && !el.classList.contains('lobby-mode-chip'));
+    list = [...(gear ? [gear] : []), ...(hostCfg ? [hostCfg] : []), ...chips, ...rest];
   }
   return list;
 }

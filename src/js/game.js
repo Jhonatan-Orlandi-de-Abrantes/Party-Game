@@ -1,6 +1,6 @@
 import { state } from './state.js';
 import { getPlayerKeys } from './input.js';
-import { publishGameState, saveRooms } from './storage.js';
+import { publishGameState, saveRooms, getDeviceId } from './storage.js';
 import { setStarted } from './rooms.js';
 import { playSound, playPop } from './audio.js';
 import { getPlayableMaps, playableMapKey } from './maps.js';
@@ -250,6 +250,7 @@ export function initGame() {
     t: Date.now(),
     roundResult: null,
     lastTime: null,
+    sim: getDeviceId(),
     particles: [],
     orbs: [],
     orbSeq: 0,
@@ -898,7 +899,11 @@ function awardRoundPoints(result) {
     ranked = [winner, ...rest];
   }
   ranked.forEach((player, position) => {
-    const pts = position === 0 ? 4 : position === 1 ? 3 : position === 2 ? 2 : 1;
+    let pts = position === 0 ? 3 : position === 1 ? 2 : position === 2 ? 1 : 0;
+    const gsPlayer = state.gameState && state.gameState.players
+      ? state.gameState.players.find(p => p.id === player.id)
+      : null;
+    if (gsPlayer && effectActive(gsPlayer, 'double')) pts *= 2;
     player.score = (player.score || 0) + pts;
   });
   saveRooms();

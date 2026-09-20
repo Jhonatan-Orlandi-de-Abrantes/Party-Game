@@ -170,8 +170,21 @@ function becomeSimulator() {
     return;
   }
   if (st && st.running) {
+    const fresh = Date.now() - st.t <= HOST_TIMEOUT;
+    const myDevice = storage.getDeviceId();
+    if (fresh && st.sim && st.sim !== myDevice) {
+      // Outro dispositivo está simulando e publicando em dia (host ativo).
+      // Apenas renderizamos em vez de simular junto: evita dupla simulação,
+      // que causava dessincronização e sons repetindo.
+      state.gameState = st;
+      state.lastSeenRev = st.rev - 1;
+      state.lastFrameTime = 0;
+      startRenderLoop();
+      return;
+    }
     state.gameState = st;
     state.accTime = 0;
+    state.gameState.sim = myDevice;
     storage.publishGameState();
     audio.playGameMusic(st.map, st.mode);
     startSimLoop();
@@ -203,6 +216,7 @@ function publishHeartbeat() {
   if (now - state.lastPublishTime >= PUBLISH_INTERVAL) {
     state.lastPublishTime = now;
     state.gameState.t = now;
+    if (state.gameState.running) state.gameState.sim = storage.getDeviceId();
     state.gameState.rev = (state.gameState.rev || 0) + 1;
     storage.publishGameState();
   }
@@ -413,11 +427,45 @@ function quitToLobby() {
   state.lastSeenRev = -1;
   state.endShown = false;
   if (state.currentRoom) {
-    localStorage.removeItem(storage.gameKey(state.currentRoom.code));
+    const code = state.currentRoom.code;
+    localStorage.removeItem(storage.gameKey(code));
+    // Avise os outros dispositivos que a partida foi FECHADA: sem isso, eles
+    // continuam com o estado antigo da partida e voltam para ela na hora
+    // em que o host iniciar outra.
+    if (isHost()) net.netRelay(storage.gameKey(code), null);
     rooms.setStarted(false);
   }
   closeSettingsPanel();
   showLobby();
+}
+
+// Formata qualquer dispositivo que esteja na tela da partida anterior para o
+// lobby daquela sala. Usado quando o estado da partida é removido do storage
+// (host voltou ao lobby / fechou a partida / começou nova).
+function teardownGameToLobby() {
+  const code = state.currentRoom && state.currentRoom.code;
+  if (code) {
+    try {
+      localStorage.removeItem(storage.gameKey(code));
+    } catch (error) {}
+  }
+  stopSimLoop();
+  stopGameWait();
+  stopCountdown();
+  hideResultsOverlay();
+  state.gameState = null;
+  state.lastSeenRev = -1;
+  state.endShown = false;
+  state.deathSoundPlayed = false;
+  if (!state.currentRoom) {
+    audio.playMenuMusic();
+    showScreen('welcome');
+    return;
+  }
+  audio.playMenuMusic();
+  showScreen('lobby');
+  renderLobby();
+  if (state.currentRoom.started) handleRoomStarted();
 }
 
 let gameWaitTimer = null;
@@ -475,11 +523,11 @@ function handleRoomStarted() {
 function onCountdownDone() {
   if (!state.currentRoom || !state.currentRoom.started) return;
   if (isHost()) {
-    const st = storage.readGameState();
-    if (!st || !st.running) {
-      game.initGame();
-      storage.publishGameState();
-    }
+    // Sempre inicia uma partida nova: qualquer estado antigo que ainda esteja
+    // salvo (ex.: de uma partida anterior que não foi fechada) deve ser
+    // descartado, senão o host entraria "atrasado" na partida velha.
+    game.initGame();
+    storage.publishGameState();
     enterGameScreen();
   } else {
     startGameWait();
@@ -732,7 +780,20 @@ document.addEventListener('click', event => {
 
 function handleStorageSync(event) {
   const changedKey = event.key != null ? event.key : (event.detail && event.detail.key);
-  if (!changedKey || changedKey !== STORAGE_KEY) return;
+  if (!changedKey) return;
+
+  // Estado da partida atual mudou/foi removido por outro dispositivo.
+  const nowCode = state.currentRoom && state.currentRoom.code;
+  if (nowCode && changedKey === storage.gameKey(nowCode)) {
+    const liveValue = typeof event.newValue === 'string' ? event.newValue : localStorage.getItem(changedKey);
+    if (liveValue == null) {
+      teardownGameToLobby();
+    }
+    return;
+  }
+
+  if (changedKey !== STORAGE_KEY) return;
+
   const previousSignature = rooms.roomSignature(state.currentRoom);
   const previousPlayers = state.currentRoom ? [...state.currentRoom.players] : null;
   const wasInRoom = !!state.currentRoom;
@@ -812,9 +873,15 @@ function handleStorageSync(event) {
         handleRoomStarted();
       }
     } else {
-      if (state.endShown) return;
-      const st = storage.readGameState();
-      if (st && st.roundResult) return;
+      // A partida desta sala foi interrompida/encerrada por outro dispositivo
+      // (ex.: host voltou ao lobby). Leve todos ao lobby, mesmo quem estava
+      // na tela de resultados — senão o jogador ficaria preso nela.
+      if (state.currentRoom) {
+        try {
+          localStorage.removeItem(storage.gameKey(state.currentRoom.code));
+        } catch (error) {}
+      }
+      invalidateClientCache();
       stopSimLoop();
       stopGameWait();
       stopCountdown();

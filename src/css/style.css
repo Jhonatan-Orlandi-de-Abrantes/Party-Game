@@ -1940,15 +1940,29 @@ input[type="range"]::-moz-range-thumb {
     box-shadow: 5px 5px 0 rgba(0, 0, 0, 0.18);
   }
   .modal-box img { max-width: 100%; height: auto; }
+  /* Tela de cosméticos personalizados: a JANELA cresce (largura + altura)
+     para aproveitar a tela do celular. Os cosméticos em si mantêm o tamanho
+     normal. */
+  .modal-box.cosmetics-modal-box {
+    width: calc(100vw - 20px);
+    height: calc(100dvh - 32px);
+  }
+  .cosmetics-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+  }
+  /* Popup do seletor de cosméticos ("Escolha seu Cosmético"): a caixa fica
+     com a MESMA dimensão em px da tela de cosméticos personalizados. */
   .hat-popup-box {
-    width: auto;
-    max-width: calc(100vw - 20px);
-    max-height: calc(100vh - 24px);
-    max-height: calc(100dvh - 24px);
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior: contain;
-    padding: 14px;
+    width: calc(100vw - 20px);
+    height: calc(100dvh - 32px);
+    max-height: calc(100dvh - 32px);
+  }
+  .hat-grid {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
   }
   /* Listas internas também param o rolar de "vazar" pro fundo */
   .cosmetics-list,
@@ -2031,6 +2045,27 @@ input[type="range"]::-moz-range-thumb {
   .hud-panel { flex: 1 1 140px; min-width: 140px; padding: 3px 8px; }
   .hud-panel strong { font-size: 0.72rem; margin-bottom: 1px; }
   .status-line { font-size: 0.68rem; margin-top: 1px; }
+}
+
+/* Celular DEITADO (paisagem): a tela de cosméticos ocupa a largura toda.
+   Os cosméticos em si voltam ao tamanho normal; quem cresce é a JANELA. */
+@media (max-height: 540px) and (min-width: 568px) {
+  .modal-box.cosmetics-modal-box,
+  .modal-box.host-config-box {
+    width: min(calc(100vw - 20px), 900px);
+  }
+  /* No painel "Regras do Jogo" (com blocos de mapa), em paisagem o painel
+     fica largo, mas os blocos continuam do MESMO tamanho do modo normal */
+  .host-config-box .lobby-map-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 170px));
+  }
+}
+
+/* Tela cheia no celular: mesmo em fullscreen, os blocos do mapa na tela de
+   regras mantêm o tamanho normal (não esticam com a largura da tela) */
+html:fullscreen .host-config-box .lobby-map-grid,
+html:-webkit-full-screen .host-config-box .lobby-map-grid {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 170px));
 }
 
 /* ============================================================

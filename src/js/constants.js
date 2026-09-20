@@ -129,7 +129,7 @@ export const POWERUPS = [
   { id: 'ghost',  name: 'Fantasma',        icon: '👻', color: '#c5d5ff', modes: ['bomb', 'egg', 'run'], duration: 4 },
   { id: 'freeze', name: 'Congelar Outros', icon: '❄️', color: '#74c0fc', modes: ['bomb', 'egg', 'run'], freezeDuration: 2 },
   { id: 'relief', name: 'Troca',            icon: '💣', color: '#fa5252', modes: ['bomb'] },
-  { id: 'double', name: 'Pontos Dobrados', icon: '✖️', color: '#ffd23f', modes: ['egg'], duration: 8 },
+  { id: 'double', name: 'Pontos Dobrados', icon: '✖️', color: '#ffd23f', modes: ['egg', 'bomb'], duration: 8 },
   { id: 'heart',  name: 'Coração Extra',   icon: '❤️', color: '#ff6b81', modes: ['run'], maxHearts: 3, monsterSpeedDuration: 5, monsterSpeedMultiplier: 1.25 }
 ];
 

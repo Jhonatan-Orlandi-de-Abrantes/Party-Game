@@ -1560,7 +1560,8 @@ function showHostConfigWarning(text) {
 export function openHostConfig() {
   if (!isHost()) return;
   if (!refs.hostConfigPanel) return;
-  updateLobbyMapsTitle();
+  renderLobbyMaps();
+  renderLobbyRules();
   updateHostConfigHint();
   clearUiFocuses();
   refs.hostConfigPanel.classList.remove('hidden');
@@ -1634,6 +1635,10 @@ function renderLobbyModes() {
   const room = state.currentRoom;
   if (!room || !refs.lobbyModeList) return;
   const current = GAME_MODES.some(m => m.id === room.mode) ? room.mode : GAME_MODES[0].id;
+  if (room.mode !== current) {
+    room.mode = current;
+    if (isHost()) saveRooms();
+  }
   const host = isHost();
   refs.lobbyModeList.innerHTML = '';
   GAME_MODES.forEach(mode => {

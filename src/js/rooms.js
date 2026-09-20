@@ -19,7 +19,7 @@ export function randomColor() {
   return `#${[r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')}`;
 }
 
-export function createRoom(nickname, maxPlayers, mode = 'local') {
+export function createRoom(nickname, maxPlayers, mode = 'bomb') {
   if (!nickname) return 'Informe um apelido antes de criar a sala.';
   state.rooms = loadRooms();
   const code = randomCode();
